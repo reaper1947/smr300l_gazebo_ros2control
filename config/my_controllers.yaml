@@ -18,6 +18,7 @@ diff_cont:
 
     left_wheel_names: ['left_wheel_joint']
     right_wheel_names: ['right_wheel_joint']
+<<<<<<< HEAD
     wheel_separation: 0.54
     wheel_radius: 0.053
 
@@ -66,3 +67,9 @@ diff_cont:
 
 # joint_broad:
 #   ros__parameters:
+=======
+    wheel_separation: 0.20
+    wheel_radius: 0.033
+
+    use_stamped_vel: false
+>>>>>>> 51bf80f (web ui nav update)

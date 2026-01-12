@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zone Navigation UI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+        }
+        
+        #container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        #sidebar {
+            width: 320px;
+            background: #2a2a2a;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 2px solid #444;
+        }
+        
+        #map-container {
+            flex: 1;
+            position: relative;
+            background: #222;
+            overflow: hidden;
+        }
+        
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #4CAF50;
+        }
+        
+        h2 {
+            font-size: 18px;
+            margin: 20px 0 10px 0;
+            color: #2196F3;
+        }
+        
+        #canvas {
+            position: absolute;
+            cursor: crosshair;
+            image-rendering: pixelated;
+        }
+        
+        .zone-list {
+            list-style: none;
+        }
+        
+        .zone-item {
+            background: #333;
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+        
+        .zone-item:hover {
+            background: #3a3a3a;
+        }
+        
+        .zone-name {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .zone-coords {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+        
+        .zone-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        
+        .btn-go {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .btn-go:hover {
+            background: #45a049;
+        }
+        
+        .btn-delete {
+            background: #f44336;
+            color: white;
+            padding: 8px 12px;
+        }
+        
+        .btn-delete:hover {
+            background: #da190b;
+        }
+        
+        .controls {
+            background: #333;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        
+        .input-group {
+            margin-bottom: 10px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+            font-size: 14px;
+        }
+        
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #222;
+            color: #fff;
+            font-size: 14px;
+        }
+        
+        .btn-save {
+            width: 100%;
+            background: #2196F3;
+            color: white;
+            padding: 12px;
+            margin-top: 10px;
+        }
+        
+        .btn-save:hover {
+            background: #0b7dda;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        
+        .status.success {
+            background: #4CAF50;
+        }
+        
+        .status.error {
+            background: #f44336;
+        }
+        
+        .status.info {
+            background: #2196F3;
+        }
+        
+        .instructions {
+            background: #333;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #ccc;
+        }
+        
+        .instructions h3 {
+            color: #4CAF50;
+            margin-bottom: 10px;
+        }
+        
+        .zoom-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 100;
+        }
+        
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            background: #333;
+            color: white;
+            border: 2px solid #555;
+            border-radius: 4px;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .zoom-btn:hover {
+            background: #444;
+            border-color: #4CAF50;
+        }
+        
+        .zone-marker {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: #4CAF50;
+            border: 3px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            transition: all 0.2s;
+            z-index: 10;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
+        }
+        
+        .zone-marker:hover {
+            width: 26px;
+            height: 26px;
+            box-shadow: 0 0 15px rgba(76, 175, 80, 1);
+        }
+        
+        .zone-label {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: #4CAF50;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+            pointer-events: none;
+            transform: translate(-50%, -35px);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #4CAF50;
+        }
+        
+        .robot-marker {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+        }
+        
+        .robot-icon {
+            width: 100%;
+            height: 100%;
+            background: #FF9800;
+            border: 4px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 15px rgba(255, 152, 0, 0.9);
+        }
+        
+        .robot-direction {
+            position: absolute;
+            width: 20px;
+            height: 4px;
+            background: white;
+            left: 50%;
+            top: 50%;
+            transform-origin: left center;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="sidebar">
+            <h1>🗺️ Zone Navigator</h1>
+            
+            <div class="controls">
+                <h2>Add New Zone</h2>
+                <div class="input-group">
+                    <label>Zone Name:</label>
+                    <input type="text" id="zone-name" placeholder="e.g., ZONE1, LOADING_DOCK">
+                </div>
+                <div class="input-group">
+                    <label>X Position (m):</label>
+                    <input type="number" id="zone-x" step="0.01" placeholder="Click on map or enter value">
+                </div>
+                <div class="input-group">
+                    <label>Y Position (m):</label>
+                    <input type="number" id="zone-y" step="0.01" placeholder="Click on map or enter value">
+                </div>
+                <div class="input-group">
+                    <label>Orientation (rad):</label>
+                    <input type="number" id="zone-theta" step="0.1" value="0" placeholder="0 = facing right">
+                </div>
+                <button class="btn-save" onclick="saveZone()">💾 Save Zone</button>
+                <div id="status"></div>
+            </div>
+            
+            <h2>Saved Zones</h2>
+            <ul class="zone-list" id="zone-list">
+                <li class="loading">Loading zones...</li>
+            </ul>
+        </div>
+        
+        <div id="map-container">
+            <canvas id="canvas"></canvas>
+            <div class="zoom-controls">
+                <button class="zoom-btn" onclick="zoomIn()">+</button>
+                <button class="zoom-btn" onclick="zoomOut()">−</button>
+                <button class="zoom-btn" onclick="resetView()">⌂</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mapData = null;
+        let zones = {};
+        let robotPose = null;
+        let canvas, ctx;
+        let scale = 1;
+        let offsetX = 0;
+        let offsetY = 0;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+
+        // Initialize
+        window.onload = function() {
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            
+            loadMap();
+            loadZones();
+            loadRobotPose();
+            
+            // Set up canvas interaction
+            canvas.addEventListener('click', onCanvasClick);
+            canvas.addEventListener('mousedown', onMouseDown);
+            canvas.addEventListener('mousemove', onMouseMove);
+            canvas.addEventListener('mouseup', onMouseUp);
+            canvas.addEventListener('wheel', onWheel);
+            
+            // Refresh zones and robot position every 500ms
+            setInterval(() => {
+                loadZones();
+                loadRobotPose();
+            }, 500);
+        };
+
+        function loadMap() {
+            fetch('/api/map')
+                .then(response => response.json())
+                .then(data => {
+                    mapData = data;
+                    const img = new Image();
+                    img.onload = function() {
+                        canvas.width = window.innerWidth - 320;
+                        canvas.height = window.innerHeight;
+                        mapData.image = img;
+                        
+                        // Center the map
+                        offsetX = (canvas.width - img.width) / 2;
+                        offsetY = (canvas.height - img.height) / 2;
+                        
+                        drawMap();
+                    };
+                    img.src = 'data:image/png;base64,' + data.image;
+                })
+                .catch(error => {
+                    console.error('Error loading map:', error);
+                    showStatus('Failed to load map', 'error');
+                });
+        }
+
+        function loadZones() {
+            fetch('/api/zones')
+                .then(response => response.json())
+                .then(data => {
+                    zones = data.zones || {};
+                    updateZoneList();
+                    if (mapData) drawMap();
+                })
+                .catch(error => console.error('Error loading zones:', error));
+        }
+
+        function loadRobotPose() {
+            fetch('/api/robot/pose')
+                .then(response => response.json())
+                .then(data => {
+                    robotPose = data.pose;
+                    if (robotPose) {
+                        console.log('Robot pose:', robotPose.x.toFixed(2), robotPose.y.toFixed(2), 'theta:', robotPose.theta.toFixed(2));
+                    } else {
+                        console.log('Robot pose is null - waiting for AMCL data');
+                    }
+                    if (mapData) drawMap();
+                })
+                .catch(error => console.error('Error loading robot pose:', error));
+        }
+
+        function updateZoneList() {
+            const list = document.getElementById('zone-list');
+            if (Object.keys(zones).length === 0) {
+                list.innerHTML = '<li class="zone-item" style="text-align:center; color:#666;">No zones saved yet</li>';
+                return;
+            }
+            
+            list.innerHTML = '';
+            for (const [name, zone] of Object.entries(zones)) {
+                const li = document.createElement('li');
+                li.className = 'zone-item';
+                li.innerHTML = `
+                    <div>
+                        <div class="zone-name">${name}</div>
+                        <div class="zone-coords">
+                            x: ${zone.position.x.toFixed(2)}m, 
+                            y: ${zone.position.y.toFixed(2)}m
+                        </div>
+                    </div>
+                    <div class="zone-actions">
+                        <button class="btn-go" onclick="goToZone('${name}')">GO</button>
+                    </div>
+                `;
+                list.appendChild(li);
+            }
+        }
+
+        function drawMap() {
+            if (!mapData || !mapData.image) return;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw map
+            ctx.save();
+            ctx.translate(offsetX, offsetY);
+            ctx.scale(scale, scale);
+            ctx.drawImage(mapData.image, 0, 0);
+            ctx.restore();
+            
+            // Draw zones
+            for (const [name, zone] of Object.entries(zones)) {
+                const [px, py] = worldToPixel(zone.position.x, zone.position.y);
+                
+                // Draw marker
+                ctx.save();
+                ctx.fillStyle = '#4CAF50';
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(px, py, 10, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+                
+                // Draw label
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.strokeStyle = '#4CAF50';
+                ctx.lineWidth = 1;
+                const textWidth = ctx.measureText(name).width;
+                ctx.fillRect(px - textWidth/2 - 5, py - 30, textWidth + 10, 20);
+                ctx.strokeRect(px - textWidth/2 - 5, py - 30, textWidth + 10, 20);
+                ctx.fillStyle = '#4CAF50';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(name, px, py - 16);
+                ctx.restore();
+                
+                // Draw orientation arrow
+                const angle = Math.atan2(zone.orientation.z, zone.orientation.w) * 2;
+                const arrowLen = 20;
+                ctx.save();
+                ctx.strokeStyle = '#FFD700';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(px, py);
+                ctx.lineTo(
+                    px + Math.cos(angle) * arrowLen,
+                    py + Math.sin(angle) * arrowLen
+                );
+                ctx.stroke();
+                ctx.restore();
+            }
+            
+            // Draw robot position as oriented rectangle
+            if (robotPose) {
+                const [rx, ry] = worldToPixel(robotPose.x, robotPose.y);
+                
+                // Robot dimensions in pixels (adjust based on your robot's actual size)
+                // Typical differential drive robot is about 0.5m x 0.3m
+                const robotLength = 0.5 / mapData.resolution * scale; // meters to pixels
+                const robotWidth = 0.3 / mapData.resolution * scale;
+                
+                ctx.save();
+                ctx.translate(rx, ry);
+                // Negate theta because canvas Y-axis is flipped
+                ctx.rotate(-robotPose.theta);
+                
+                // Draw robot body rectangle
+                ctx.fillStyle = '#FF9800';
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3;
+                ctx.fillRect(-robotLength/2, -robotWidth/2, robotLength, robotWidth);
+                ctx.strokeRect(-robotLength/2, -robotWidth/2, robotLength, robotWidth);
+                
+                // Draw front indicator (small rectangle at front)
+                ctx.fillStyle = '#FFC107';
+                ctx.fillRect(robotLength/2 - 5, -robotWidth/4, 5, robotWidth/2);
+                
+                // Draw direction arrow
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(robotLength/2 + 15, 0);
+                ctx.stroke();
+                
+                // Arrow head
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.moveTo(robotLength/2 + 15, 0);
+                ctx.lineTo(robotLength/2 + 5, -5);
+                ctx.lineTo(robotLength/2 + 5, 5);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.restore();
+                
+                // Draw robot label (not rotated)
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.strokeStyle = '#FF9800';
+                ctx.lineWidth = 1;
+                const robotText = 'ROBOT';
+                const textWidth = ctx.measureText(robotText).width;
+                const labelY = ry + Math.max(robotLength, robotWidth) / 2 + 10;
+                ctx.fillRect(rx - textWidth/2 - 5, labelY, textWidth + 10, 20);
+                ctx.strokeRect(rx - textWidth/2 - 5, labelY, textWidth + 10, 20);
+                ctx.fillStyle = '#FF9800';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(robotText, rx, labelY + 14);
+                ctx.restore();
+            }
+        }
+
+        function worldToPixel(wx, wy) {
+            if (!mapData) return [0, 0];
+            
+            const resolution = mapData.resolution;
+            const origin = mapData.origin;
+            
+            // Convert world coordinates to pixel coordinates
+            const px = (wx - origin[0]) / resolution;
+            const py = mapData.image.height - (wy - origin[1]) / resolution;
+            
+            // Apply zoom and pan
+            return [
+                px * scale + offsetX,
+                py * scale + offsetY
+            ];
+        }
+
+        function pixelToWorld(px, py) {
+            if (!mapData) return [0, 0];
+            
+            const resolution = mapData.resolution;
+            const origin = mapData.origin;
+            
+            // Remove zoom and pan
+            const imgX = (px - offsetX) / scale;
+            const imgY = (py - offsetY) / scale;
+            
+            // Convert pixel to world coordinates
+            const wx = imgX * resolution + origin[0];
+            const wy = (mapData.image.height - imgY) * resolution + origin[1];
+            
+            return [wx, wy];
+        }
+
+        function onCanvasClick(e) {
+            if (isDragging) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const [wx, wy] = pixelToWorld(x, y);
+            
+            document.getElementById('zone-x').value = wx.toFixed(2);
+            document.getElementById('zone-y').value = wy.toFixed(2);
+            
+            showStatus('Position selected! Enter zone name and click Save.', 'info');
+        }
+
+        function onMouseDown(e) {
+            if (e.button === 2 || e.ctrlKey) { // Right click or Ctrl+click
+                isDragging = true;
+                dragStartX = e.clientX - offsetX;
+                dragStartY = e.clientY - offsetY;
+                canvas.style.cursor = 'grabbing';
+                e.preventDefault();
+            }
+        }
+
+        function onMouseMove(e) {
+            if (isDragging) {
+                offsetX = e.clientX - dragStartX;
+                offsetY = e.clientY - dragStartY;
+                drawMap();
+            }
+        }
+
+        function onMouseUp(e) {
+            isDragging = false;
+            canvas.style.cursor = 'crosshair';
+        }
+
+        function onWheel(e) {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            scale *= delta;
+            scale = Math.max(0.5, Math.min(5, scale));
+            drawMap();
+        }
+
+        function zoomIn() {
+            scale *= 1.2;
+            scale = Math.min(5, scale);
+            drawMap();
+        }
+
+        function zoomOut() {
+            scale *= 0.8;
+            scale = Math.max(0.5, scale);
+            drawMap();
+        }
+
+        function resetView() {
+            if (mapData && mapData.image) {
+                scale = 1;
+                offsetX = (canvas.width - mapData.image.width) / 2;
+                offsetY = (canvas.height - mapData.image.height) / 2;
+                drawMap();
+            }
+        }
+
+        function saveZone() {
+            const name = document.getElementById('zone-name').value.trim();
+            const x = parseFloat(document.getElementById('zone-x').value);
+            const y = parseFloat(document.getElementById('zone-y').value);
+            const theta = parseFloat(document.getElementById('zone-theta').value) || 0;
+            
+            if (!name) {
+                showStatus('Please enter a zone name', 'error');
+                return;
+            }
+            
+            if (isNaN(x) || isNaN(y)) {
+                showStatus('Please click on the map or enter valid coordinates', 'error');
+                return;
+            }
+            
+            fetch('/api/zones/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name, x, y, theta})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                    document.getElementById('zone-name').value = '';
+                    loadZones();
+                } else {
+                    showStatus(data.message || 'Failed to save zone', 'error');
+                }
+            })
+            .catch(error => {
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+
+        function goToZone(name) {
+            showStatus(`Navigating to ${name}...`, 'info');
+            
+            fetch('/api/zones/goto', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                } else {
+                    showStatus(data.message || 'Failed to navigate', 'error');
+                }
+            })
+            .catch(error => {
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'status ' + type;
+            
+            setTimeout(() => {
+                status.textContent = '';
+                status.className = 'status';
+            }, 5000);
+        }
+
+        // Prevent context menu on canvas
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+    </script>
+</body>
+</html>

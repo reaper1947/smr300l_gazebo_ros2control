@@ -36,13 +36,32 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
+<<<<<<< HEAD
     # Launch!
+=======
+    # Remove controller spawner from sim launch
+    # node_controller_spawner = Node(
+    #     package='controller_manager',
+    #     executable='spawner',
+    #     arguments=['joint_state_controller', 'robot_state_controller'],
+    #     output='screen',
+    #     parameters=[controllers_yaml]
+    # )
+
+    # Launch!
+    # Only robot_state_publisher (and optionally joint_state_publisher) should be launched in sim
+>>>>>>> 51bf80f (web ui nav update)
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time',
             default_value='true',
             description='Use sim time if true'),
+<<<<<<< HEAD
         node_joint_state_publisher,
         node_robot_state_publisher
 
+=======
+        # node_joint_state_publisher,  # Optionally comment this out for sim
+        node_robot_state_publisher
+>>>>>>> 51bf80f (web ui nav update)
     ])

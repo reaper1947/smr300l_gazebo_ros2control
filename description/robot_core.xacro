@@ -114,7 +114,11 @@
     <joint name="left_wheel_joint" type="continuous">
         <parent link="base_link"/>
         <child link="left_wheel"/>
+<<<<<<< HEAD
         <origin xyz="0 ${wheel_offset_y} 0" rpy="-${pi/2} 0 0" />twist_mux
+=======
+        <origin xyz="0 ${wheel_offset_y} 0" rpy="-${pi/2} 0 0" />
+>>>>>>> 51bf80f (web ui nav update)
         <axis xyz="0 0 1"/>
     </joint>
 
