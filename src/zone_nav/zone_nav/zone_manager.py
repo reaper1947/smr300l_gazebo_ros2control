@@ -68,6 +68,9 @@ class ZoneManager(Node):
             self.get_logger().warn(response.message)
             return response
         
+        # Reload zones from file before saving to avoid overwriting deletions
+        self.load_zones()
+        
         # Store zone in nested structure
         self.zones.setdefault("zones", {})
         self.zones["zones"][zone_name] = {
@@ -97,6 +100,9 @@ class ZoneManager(Node):
     def go_to_zone_callback(self, request, response):
         """Navigate to a saved zone"""
         zone_name = request.name
+        
+        # Reload zones from file to ensure we have latest data
+        self.load_zones()
         
         # Get zones dict
         zones = self.zones.get("zones", {})

@@ -327,19 +327,27 @@ class ZoneWebServer(Node):
         import time
         time.sleep(0.1)
         
-        # Call service
+        # Call service asynchronously (non-blocking)
         request = SaveZone.Request()
         request.name = name
         future = self.save_zone_client.call_async(request)
         
-        # Wait for result
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+        # Add callback to log result without blocking
+        future.add_done_callback(lambda f: self._save_zone_done_callback(f, name))
         
-        if future.done():
+        # Return immediately so UI stays responsive
+        return {'ok': True, 'message': f'Saving zone "{name}"...'}
+    
+    def _save_zone_done_callback(self, future, name):
+        """Handle save zone service response"""
+        try:
             response = future.result()
-            return {'ok': response.ok, 'message': response.message}
-        else:
-            return {'ok': False, 'message': 'Service call timeout'}
+            if response.ok:
+                self.get_logger().info(f'Zone "{name}" saved successfully')
+            else:
+                self.get_logger().error(f'Failed to save zone "{name}": {response.message}')
+        except Exception as e:
+            self.get_logger().error(f'Save zone service call failed: {e}')
     
     def go_to_zone(self, name):
         """Call go_to_zone service"""

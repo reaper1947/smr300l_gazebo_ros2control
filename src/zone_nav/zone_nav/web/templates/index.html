@@ -287,9 +287,82 @@
             top: 50%;
             transform-origin: left center;
         }
+        
+        /* Custom Confirmation Modal */
+        .confirm-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .confirm-dialog {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+            max-width: 400px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+        
+        .confirm-message {
+            color: white;
+            font-size: 16px;
+            margin-bottom: 25px;
+            line-height: 1.5;
+        }
+        
+        .confirm-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        
+        .confirm-btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        
+        .confirm-btn-yes {
+            background: #f44336;
+            color: white;
+        }
+        
+        .confirm-btn-yes:hover {
+            background: #da190b;
+        }
+        
+        .confirm-btn-no {
+            background: #555;
+            color: white;
+        }
+        
+        .confirm-btn-no:hover {
+            background: #666;
+        }
     </style>
 </head>
 <body>
+    <!-- Custom Confirmation Modal -->
+    <div id="confirmModal" class="confirm-modal">
+        <div class="confirm-dialog">
+            <div id="confirmMessage" class="confirm-message"></div>
+            <div class="confirm-buttons">
+                <button class="confirm-btn confirm-btn-no" onclick="closeConfirm(false)">Cancel</button>
+                <button class="confirm-btn confirm-btn-yes" onclick="closeConfirm(true)">Delete</button>
+            </div>
+        </div>
+    </div>
+    
     <div id="container">
         <div id="sidebar">
             <h1>🗺️ Zone Navigator</h1>
@@ -355,6 +428,25 @@
         let offsetX = 0;
         let offsetY = 0;
         let isDragging = false;
+        
+        // Custom confirmation dialog
+        let confirmCallback = null;
+        
+        function showConfirm(message) {
+            return new Promise((resolve) => {
+                document.getElementById('confirmMessage').textContent = message;
+                document.getElementById('confirmModal').style.display = 'flex';
+                confirmCallback = resolve;
+            });
+        }
+        
+        function closeConfirm(result) {
+            document.getElementById('confirmModal').style.display = 'none';
+            if (confirmCallback) {
+                confirmCallback(result);
+                confirmCallback = null;
+            }
+        }
         let dragStartX = 0;
         let dragStartY = 0;
 
@@ -487,19 +579,37 @@
             for (const [name, zone] of Object.entries(zones)) {
                 const li = document.createElement('li');
                 li.className = 'zone-item';
-                li.innerHTML = `
-                    <div>
-                        <div class="zone-name">${name}</div>
-                        <div class="zone-coords">
-                            x: ${zone.position.x.toFixed(2)}m, 
-                            y: ${zone.position.y.toFixed(2)}m
-                        </div>
-                    </div>
-                    <div class="zone-actions">
-                        <button class="btn-go" onclick="goToZone('${name}')">GO</button>
-                        <button class="btn-delete" onclick="deleteZone('${name}')">✕</button>
-                    </div>
-                `;
+                
+                // Create zone info div
+                const infoDiv = document.createElement('div');
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'zone-name';
+                nameDiv.textContent = name;
+                const coordsDiv = document.createElement('div');
+                coordsDiv.className = 'zone-coords';
+                coordsDiv.textContent = `x: ${zone.position.x.toFixed(2)}m, y: ${zone.position.y.toFixed(2)}m`;
+                infoDiv.appendChild(nameDiv);
+                infoDiv.appendChild(coordsDiv);
+                
+                // Create action buttons
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'zone-actions';
+                
+                const goBtn = document.createElement('button');
+                goBtn.className = 'btn-go';
+                goBtn.textContent = 'GO';
+                goBtn.onclick = () => goToZone(name);
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn-delete';
+                deleteBtn.textContent = '✕';
+                deleteBtn.onclick = () => deleteZone(name);
+                
+                actionsDiv.appendChild(goBtn);
+                actionsDiv.appendChild(deleteBtn);
+                
+                li.appendChild(infoDiv);
+                li.appendChild(actionsDiv);
                 list.appendChild(li);
             }
         }
@@ -891,20 +1001,30 @@
             });
         }
         
-        function deleteZone(name) {
-            if (!confirm(`Are you sure you want to delete zone "${name}"?`)) {
+        async function deleteZone(name) {
+            console.log('deleteZone called with:', name);
+            
+            const confirmed = await showConfirm(`Are you sure you want to delete zone "${name}"?`);
+            
+            if (!confirmed) {
+                console.log('User cancelled deletion');
                 return;
             }
             
             showStatus(`Deleting zone ${name}...`, 'info');
+            console.log('Sending delete request for:', name);
             
             fetch('/api/zones/delete', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({name})
+                body: JSON.stringify({name: name})
             })
-            .then(response => response.json())
+            .then(response => {
+                console.log('Delete response status:', response.status);
+                return response.json();
+            })
             .then(data => {
+                console.log('Delete response data:', data);
                 if (data.ok) {
                     showStatus(data.message, 'success');
                     loadZones();
@@ -913,12 +1033,15 @@
                 }
             })
             .catch(error => {
+                console.error('Delete error:', error);
                 showStatus('Error: ' + error, 'error');
             });
         }
         
-        function forceResume() {
-            if (!confirm('Force resume navigation?\n\nOnly proceed if:\n- Obstacles are cleared\n- Robot localization improved\n- You understand the risks')) {
+        async function forceResume() {
+            const confirmed = await showConfirm('Force resume navigation?\n\nOnly proceed if:\n- Obstacles are cleared\n- Robot localization improved\n- You understand the risks');
+            
+            if (!confirmed) {
                 return;
             }
             
