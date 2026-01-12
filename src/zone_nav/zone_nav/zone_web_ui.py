@@ -3,9 +3,13 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.action import ActionClient
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from zone_nav_interfaces.srv import SaveZone, GoToZone
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from nav2_msgs.action import NavigateToPose
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
+from nav_msgs.msg import Path
+from sensor_msgs.msg import LaserScan
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from flask_cors import CORS
 import threading
@@ -28,8 +32,26 @@ class ZoneWebServer(Node):
         # Publisher for goal poses
         self.goal_pub = self.create_publisher(PoseStamped, '/goal_pose', 10)
         
+        # Publisher for emergency stop - use joystick topic (highest priority in twist_mux)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_joy', 10)
+        
+        # Action client for Nav2 navigation (to cancel goals)
+        self.nav_action_client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
+        self.current_nav_goal_handle = None
+        
+        # Timer for continuous safety stop commands
+        self.safety_stop_timer = None
+        
+        # Safety parameters
+        self.confidence_threshold = 30.0  # Stop if confidence drops below this
+        self.confidence_resume_threshold = 35.0  # Resume when confidence goes above this (hysteresis)
+        self.safety_stop_active = False
+        self.safety_override_active = False  # Manual override flag
+        self.last_confidence_warning = 0.0
+        
         # Subscribe to robot position - match AMCL's QoS profile
         self.robot_pose = None
+        self.localization_confidence = 0.0
         qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -44,6 +66,28 @@ class ZoneWebServer(Node):
         )
         
         self.get_logger().info('Subscribed to /amcl_pose with RELIABLE + TRANSIENT_LOCAL QoS')
+        
+        # Subscribe to navigation path
+        self.current_path = None
+        self.path_sub = self.create_subscription(
+            Path,
+            '/plan',
+            self.path_callback,
+            10
+        )
+        
+        self.get_logger().info('Subscribed to /plan for navigation path')
+        
+        # Subscribe to lidar scan
+        self.laser_scan = None
+        self.scan_sub = self.create_subscription(
+            LaserScan,
+            '/scan',
+            self.scan_callback,
+            10
+        )
+        
+        self.get_logger().info('Subscribed to /scan for lidar data')
         
         # Load map info
         self.map_path = os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps/smr_map.yaml')
@@ -61,7 +105,129 @@ class ZoneWebServer(Node):
             'y': msg.pose.pose.position.y,
             'theta': 2 * math.atan2(msg.pose.pose.orientation.z, msg.pose.pose.orientation.w)
         }
-        self.get_logger().info(f'Robot pose updated: x={self.robot_pose["x"]:.2f}, y={self.robot_pose["y"]:.2f}, theta={self.robot_pose["theta"]:.2f}', throttle_duration_sec=2.0)
+        
+        # Calculate localization confidence from covariance
+        # Lower covariance = higher confidence
+        # Covariance matrix is 6x6, we look at x, y position variance (indices 0, 7)
+        cov_x = msg.pose.covariance[0]  # Variance in x
+        cov_y = msg.pose.covariance[7]  # Variance in y
+        cov_theta = msg.pose.covariance[35]  # Variance in theta
+        
+        # Average position variance
+        pos_variance = (cov_x + cov_y) / 2.0
+        
+        # Convert to confidence (0-100%)
+        # Lower variance = higher confidence
+        # Using exponential decay: confidence = 100 * e^(-k * variance)
+        k = 5.0  # Tuning factor
+        self.localization_confidence = min(100.0, max(0.0, 100.0 * math.exp(-k * pos_variance)))
+        
+        # Safety check: Stop robot if confidence is too low
+        current_time = self.get_clock().now().nanoseconds / 1e9
+        
+        # If confidence improved naturally, clear override
+        if self.localization_confidence > self.confidence_resume_threshold:
+            self.safety_override_active = False
+        
+        if self.localization_confidence < self.confidence_threshold:
+            if not self.safety_stop_active:
+                # Don't stop if override is active, but warn
+                if self.safety_override_active:
+                    if (current_time - self.last_confidence_warning) > 5.0:
+                        self.get_logger().warn(f'⚠️  WARNING: Confidence still low ({self.localization_confidence:.1f}%) but override is active')
+                        self.last_confidence_warning = current_time
+                else:
+                    self.safety_stop_active = True
+                    self.get_logger().warn(f'⚠️  SAFETY STOP: Localization confidence too low ({self.localization_confidence:.1f}% < {self.confidence_threshold}%). Stopping robot.')
+                    self._emergency_stop()
+                    # Start continuous stop timer
+                    if self.safety_stop_timer is None:
+                        self.safety_stop_timer = self.create_timer(0.1, self._publish_stop_command)
+        elif self.localization_confidence > self.confidence_resume_threshold:
+            if self.safety_stop_active:
+                self.safety_stop_active = False
+                self.get_logger().info(f'✓ Confidence restored ({self.localization_confidence:.1f}% > {self.confidence_resume_threshold}%). Robot can resume navigation.')
+                # Stop the continuous stop timer
+                if self.safety_stop_timer is not None:
+                    self.safety_stop_timer.cancel()
+                    self.safety_stop_timer = None
+        
+        # Log less frequently to avoid spam
+        self.get_logger().debug(f'Robot pose updated: x={self.robot_pose["x"]:.2f}, y={self.robot_pose["y"]:.2f}, theta={self.robot_pose["theta"]:.2f}, confidence={self.localization_confidence:.1f}%')
+    
+    def path_callback(self, msg):
+        """Store the current navigation path"""
+        if len(msg.poses) > 0:
+            self.current_path = [
+                {
+                    'x': pose.pose.position.x,
+                    'y': pose.pose.position.y
+                }
+                for pose in msg.poses
+            ]
+            self.get_logger().debug(f'Path updated with {len(self.current_path)} waypoints')
+        else:
+            self.current_path = None
+    
+    def scan_callback(self, msg):
+        """Store lidar scan data"""
+        if not self.robot_pose:
+            return
+        
+        # Sample every Nth point to reduce data size
+        sample_rate = 5
+        points = []
+        
+        angle = msg.angle_min
+        for i, r in enumerate(msg.ranges):
+            if i % sample_rate == 0 and msg.range_min < r < msg.range_max:
+                # Convert polar to cartesian relative to robot
+                x_local = r * math.cos(angle)
+                y_local = r * math.sin(angle)
+                
+                # Transform to world coordinates
+                robot_theta = self.robot_pose['theta']
+                x_world = self.robot_pose['x'] + x_local * math.cos(robot_theta) - y_local * math.sin(robot_theta)
+                y_world = self.robot_pose['y'] + x_local * math.sin(robot_theta) + y_local * math.cos(robot_theta)
+                
+                points.append({'x': x_world, 'y': y_world})
+            
+            angle += msg.angle_increment
+        
+        self.laser_scan = points
+    
+    def _publish_stop_command(self):
+        """Continuously publish stop commands while safety stop is active"""
+        if self.safety_stop_active:
+            stop_msg = Twist()
+            stop_msg.linear.x = 0.0
+            stop_msg.linear.y = 0.0
+            stop_msg.linear.z = 0.0
+            stop_msg.angular.x = 0.0
+            stop_msg.angular.y = 0.0
+            stop_msg.angular.z = 0.0
+            self.cmd_vel_pub.publish(stop_msg)
+    
+    def _emergency_stop(self):
+        """Send zero velocity command and cancel Nav2 goals to stop the robot immediately"""
+        # Send stop command to high-priority joystick topic (overrides Nav2)
+        stop_msg = Twist()
+        stop_msg.linear.x = 0.0
+        stop_msg.linear.y = 0.0
+        stop_msg.linear.z = 0.0
+        stop_msg.angular.x = 0.0
+        stop_msg.angular.y = 0.0
+        stop_msg.angular.z = 0.0
+        self.cmd_vel_pub.publish(stop_msg)
+        
+        # Cancel any active Nav2 navigation goals
+        if self.current_nav_goal_handle is not None:
+            try:
+                self.get_logger().warn('Canceling active navigation goal due to low confidence')
+                cancel_future = self.current_nav_goal_handle.cancel_goal_async()
+                self.current_nav_goal_handle = None
+            except Exception as e:
+                self.get_logger().error(f'Failed to cancel navigation goal: {e}')
     
     def load_map_info(self):
         """Load map YAML configuration"""
@@ -96,6 +262,44 @@ class ZoneWebServer(Node):
                 self.get_logger().error(f'Failed to load zones: {e}')
                 return {}
         return {}
+    
+    def delete_zone(self, name):
+        """Delete a zone from the zones file"""
+        try:
+            zones = self.load_zones()
+            
+            if name not in zones:
+                return {'ok': False, 'message': f'Zone "{name}" not found'}
+            
+            # Remove the zone
+            del zones[name]
+            
+            # Save back to file
+            with open(self.zones_file, 'w') as f:
+                yaml.dump({'zones': zones}, f, default_flow_style=False)
+            
+            self.get_logger().info(f'Zone "{name}" deleted successfully')
+            return {'ok': True, 'message': f'Zone "{name}" deleted successfully'}
+            
+        except Exception as e:
+            self.get_logger().error(f'Failed to delete zone: {e}')
+            return {'ok': False, 'message': f'Error deleting zone: {str(e)}'}
+    
+    def force_resume_navigation(self):
+        """Manually override safety stop and resume navigation"""
+        if self.safety_stop_active:
+            self.safety_override_active = True
+            self.safety_stop_active = False
+            
+            # Stop the continuous stop timer
+            if self.safety_stop_timer is not None:
+                self.safety_stop_timer.cancel()
+                self.safety_stop_timer = None
+            
+            self.get_logger().warn(f'⚠️  MANUAL OVERRIDE: Safety stop overridden by user. Confidence: {self.localization_confidence:.1f}%')
+            return {'ok': True, 'message': f'Safety stop overridden. Robot can now navigate (confidence: {self.localization_confidence:.1f}%)'}
+        else:
+            return {'ok': False, 'message': 'Safety stop is not active'}
     
     def save_zone(self, name, x, y, theta):
         """Call save_zone service"""
@@ -142,17 +346,23 @@ class ZoneWebServer(Node):
         if not self.go_to_zone_client.wait_for_service(timeout_sec=1.0):
             return {'ok': False, 'message': 'Go to zone service not available'}
         
+        # Clear safety stop if confidence is good
+        if self.localization_confidence > self.confidence_resume_threshold:
+            self.safety_stop_active = False
+            self.safety_override_active = False
+        
+        # Check if safety stop is active (unless overridden)
+        if self.safety_stop_active and not self.safety_override_active:
+            return {'ok': False, 'message': f'Cannot navigate: Localization confidence too low ({self.localization_confidence:.1f}%). Improve robot localization first or use "Force Resume" if obstacles are cleared.'}
+        
         request = GoToZone.Request()
         request.name = name
+        # Send the request asynchronously without blocking
         future = self.go_to_zone_client.call_async(request)
         
-        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
-        
-        if future.done():
-            response = future.result()
-            return {'ok': response.ok, 'message': response.message}
-        else:
-            return {'ok': False, 'message': 'Service call timeout'}
+        # Don't wait for completion - return immediately so pose updates continue
+        # The navigation will proceed in the background
+        return {'ok': True, 'message': f'Navigation to zone "{name}" started'}
     
     def convert_map_to_png(self):
         """Convert PGM map to PNG for web display"""
@@ -240,7 +450,30 @@ def get_robot_pose():
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
-    return jsonify({'pose': ros_node.robot_pose})
+    return jsonify({
+        'pose': ros_node.robot_pose,
+        'confidence': ros_node.localization_confidence,
+        'safety_stop': ros_node.safety_stop_active,
+        'override_active': ros_node.safety_override_active
+    })
+
+
+@app.route('/api/path')
+def get_path():
+    """Get current navigation path"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    return jsonify({'path': ros_node.current_path})
+
+
+@app.route('/api/scan')
+def get_scan():
+    """Get current lidar scan points"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    return jsonify({'scan': ros_node.laser_scan})
 
 
 @app.route('/api/zones/save', methods=['POST'])
@@ -275,6 +508,32 @@ def goto_zone():
         return jsonify({'error': 'Missing zone name'}), 400
     
     result = ros_node.go_to_zone(name)
+    return jsonify(result)
+
+
+@app.route('/api/zones/delete', methods=['POST'])
+def delete_zone():
+    """Delete a zone"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    data = request.json
+    name = data.get('name')
+    
+    if not name:
+        return jsonify({'error': 'Missing zone name'}), 400
+    
+    result = ros_node.delete_zone(name)
+    return jsonify(result)
+
+
+@app.route('/api/safety/force_resume', methods=['POST'])
+def force_resume():
+    """Force resume navigation by overriding safety stop"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    result = ros_node.force_resume_navigation()
     return jsonify(result)
 
 

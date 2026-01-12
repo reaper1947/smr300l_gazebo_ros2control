@@ -14,7 +14,7 @@
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #1a1a1a;
-            color: #fff;
+            color: #fff; 
             overflow: hidden;
         }
         
@@ -320,6 +320,15 @@
             <ul class="zone-list" id="zone-list">
                 <li class="loading">Loading zones...</li>
             </ul>
+            
+            <div id="safety-controls" style="display: none; margin-top: 20px;">
+                <button class="btn-save" style="background: #FFC107; width: 100%;" onclick="forceResume()">
+                    ⚠ Force Resume Navigation
+                </button>
+                <p style="font-size: 12px; color: #FFC107; margin-top: 10px; text-align: center;">
+                    Use only if obstacles are cleared
+                </p>
+            </div>
         </div>
         
         <div id="map-container">
@@ -336,6 +345,11 @@
         let mapData = null;
         let zones = {};
         let robotPose = null;
+        let currentPath = null;
+        let laserScan = null;
+        let localizationConfidence = 0;
+        let safetyStopActive = false;
+        let overrideActive = false;
         let canvas, ctx;
         let scale = 1;
         let offsetX = 0;
@@ -360,11 +374,25 @@
             canvas.addEventListener('mouseup', onMouseUp);
             canvas.addEventListener('wheel', onWheel);
             
-            // Refresh zones and robot position every 500ms
+            // Refresh zones every 2 seconds
             setInterval(() => {
                 loadZones();
+            }, 2000);
+            
+            // Refresh robot position every 10ms for real-time tracking
+            setInterval(() => {
                 loadRobotPose();
-            }, 500);
+            }, 10);
+            
+            // Refresh path every 200ms
+            setInterval(() => {
+                loadPath();
+            }, 200);
+            
+            // Refresh lidar scan every 100ms
+            setInterval(() => {
+                loadScan();
+            }, 100);
         };
 
         function loadMap() {
@@ -408,6 +436,16 @@
                 .then(response => response.json())
                 .then(data => {
                     robotPose = data.pose;
+                    localizationConfidence = data.confidence || 0;
+                    safetyStopActive = data.safety_stop || false;
+                    overrideActive = data.override_active || false;
+                    
+                    // Show/hide safety controls based on safety stop status
+                    const safetyControls = document.getElementById('safety-controls');
+                    if (safetyControls) {
+                        safetyControls.style.display = safetyStopActive ? 'block' : 'none';
+                    }
+                    
                     if (robotPose) {
                         console.log('Robot pose:', robotPose.x.toFixed(2), robotPose.y.toFixed(2), 'theta:', robotPose.theta.toFixed(2));
                     } else {
@@ -416,6 +454,26 @@
                     if (mapData) drawMap();
                 })
                 .catch(error => console.error('Error loading robot pose:', error));
+        }
+
+        function loadPath() {
+            fetch('/api/path')
+                .then(response => response.json())
+                .then(data => {
+                    currentPath = data.path;
+                    if (mapData) drawMap();
+                })
+                .catch(error => console.error('Error loading path:', error));
+        }
+        
+        function loadScan() {
+            fetch('/api/scan')
+                .then(response => response.json())
+                .then(data => {
+                    laserScan = data.scan;
+                    if (mapData) drawMap();
+                })
+                .catch(error => console.error('Error loading scan:', error));
         }
 
         function updateZoneList() {
@@ -439,6 +497,7 @@
                     </div>
                     <div class="zone-actions">
                         <button class="btn-go" onclick="goToZone('${name}')">GO</button>
+                        <button class="btn-delete" onclick="deleteZone('${name}')">✕</button>
                     </div>
                 `;
                 list.appendChild(li);
@@ -502,6 +561,51 @@
                 ctx.restore();
             }
             
+            // Draw navigation path
+            if (currentPath && currentPath.length > 1) {
+                ctx.save();
+                ctx.strokeStyle = '#2196F3';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([10, 5]);
+                ctx.beginPath();
+                
+                const [startX, startY] = worldToPixel(currentPath[0].x, currentPath[0].y);
+                ctx.moveTo(startX, startY);
+                
+                for (let i = 1; i < currentPath.length; i++) {
+                    const [px, py] = worldToPixel(currentPath[i].x, currentPath[i].y);
+                    ctx.lineTo(px, py);
+                }
+                
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+                
+                // Draw waypoint markers
+                ctx.save();
+                ctx.fillStyle = '#2196F3';
+                for (let i = 0; i < currentPath.length; i += Math.max(1, Math.floor(currentPath.length / 20))) {
+                    const [px, py] = worldToPixel(currentPath[i].x, currentPath[i].y);
+                    ctx.beginPath();
+                    ctx.arc(px, py, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+            
+            // Draw lidar scan points
+            if (laserScan && laserScan.length > 0) {
+                ctx.save();
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+                for (const point of laserScan) {
+                    const [px, py] = worldToPixel(point.x, point.y);
+                    ctx.beginPath();
+                    ctx.arc(px, py, 2, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+            
             // Draw robot position as oriented rectangle
             if (robotPose) {
                 const [rx, ry] = worldToPixel(robotPose.x, robotPose.y);
@@ -522,6 +626,18 @@
                 ctx.lineWidth = 3;
                 ctx.fillRect(-robotLength/2, -robotWidth/2, robotLength, robotWidth);
                 ctx.strokeRect(-robotLength/2, -robotWidth/2, robotLength, robotWidth);
+                
+                // Draw safety stop warning border
+                if (safetyStopActive) {
+                    ctx.strokeStyle = '#f44336';
+                    ctx.lineWidth = 5;
+                    ctx.setLineDash([5, 5]);
+                    const pulse = Math.abs(Math.sin(Date.now() / 200));
+                    ctx.globalAlpha = 0.5 + pulse * 0.5;
+                    ctx.strokeRect(-robotLength/2 - 5, -robotWidth/2 - 5, robotLength + 10, robotWidth + 10);
+                    ctx.setLineDash([]);
+                    ctx.globalAlpha = 1.0;
+                }
                 
                 // Draw front indicator (small rectangle at front)
                 ctx.fillStyle = '#FFC107';
@@ -561,6 +677,59 @@
                 ctx.textAlign = 'center';
                 ctx.fillText(robotText, rx, labelY + 14);
                 ctx.restore();
+                
+                // Draw confidence indicator
+                ctx.save();
+                const confText = `${localizationConfidence.toFixed(0)}%`;
+                const confColor = localizationConfidence > 80 ? '#4CAF50' : localizationConfidence > 50 ? '#FFC107' : '#f44336';
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.strokeStyle = confColor;
+                ctx.lineWidth = 1;
+                const confWidth = ctx.measureText(confText).width;
+                const confY = labelY + 25;
+                ctx.fillRect(rx - confWidth/2 - 5, confY, confWidth + 10, 18);
+                ctx.strokeRect(rx - confWidth/2 - 5, confY, confWidth + 10, 18);
+                ctx.fillStyle = confColor;
+                ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(confText, rx, confY + 13);
+                ctx.restore();
+                
+                // Draw SAFETY STOP warning
+                if (safetyStopActive) {
+                    ctx.save();
+                    const stopText = '⚠ SAFETY STOP';
+                    ctx.fillStyle = 'rgba(244, 67, 54, 0.95)';
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 2;
+                    const stopWidth = ctx.measureText(stopText).width;
+                    const stopY = confY + 23;
+                    ctx.fillRect(rx - stopWidth/2 - 5, stopY, stopWidth + 10, 20);
+                    ctx.strokeRect(rx - stopWidth/2 - 5, stopY, stopWidth + 10, 20);
+                    ctx.fillStyle = 'white';
+                    ctx.font = 'bold 12px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(stopText, rx, stopY + 14);
+                    ctx.restore();
+                }
+                
+                // Draw OVERRIDE indicator
+                if (overrideActive) {
+                    ctx.save();
+                    const overrideText = '⚠ OVERRIDE ACTIVE';
+                    ctx.fillStyle = 'rgba(255, 193, 7, 0.95)';
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 2;
+                    const overrideWidth = ctx.measureText(overrideText).width;
+                    const overrideY = safetyStopActive ? confY + 46 : confY + 23;
+                    ctx.fillRect(rx - overrideWidth/2 - 5, overrideY, overrideWidth + 10, 20);
+                    ctx.strokeRect(rx - overrideWidth/2 - 5, overrideY, overrideWidth + 10, 20);
+                    ctx.fillStyle = 'white';
+                    ctx.font = 'bold 11px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(overrideText, rx, overrideY + 14);
+                    ctx.restore();
+                }
             }
         }
 
@@ -715,6 +884,58 @@
                     showStatus(data.message, 'success');
                 } else {
                     showStatus(data.message || 'Failed to navigate', 'error');
+                }
+            })
+            .catch(error => {
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        function deleteZone(name) {
+            if (!confirm(`Are you sure you want to delete zone "${name}"?`)) {
+                return;
+            }
+            
+            showStatus(`Deleting zone ${name}...`, 'info');
+            
+            fetch('/api/zones/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                    loadZones();
+                } else {
+                    showStatus(data.message || 'Failed to delete zone', 'error');
+                }
+            })
+            .catch(error => {
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        function forceResume() {
+            if (!confirm('Force resume navigation?\n\nOnly proceed if:\n- Obstacles are cleared\n- Robot localization improved\n- You understand the risks')) {
+                return;
+            }
+            
+            showStatus('Forcing navigation resume...', 'info');
+            
+            fetch('/api/safety/force_resume', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                    loadRobotPose();
+                } else {
+                    showStatus(data.message || 'Failed to resume', 'error');
                 }
             })
             .catch(error => {
