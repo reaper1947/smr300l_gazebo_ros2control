@@ -24,6 +24,8 @@ setup(
         'console_scripts': [
             'zone_manager = zone_nav.zone_manager:main',
             'zone_web_ui = zone_nav.zone_web_ui:main',
+            'mode_switcher = zone_nav.mode_switcher:main',
+            'safety_controller = zone_nav.safety_controller:main',
         ],
     },
 )

@@ -24,11 +24,48 @@
         }
         
         #sidebar {
-            width: 320px;
-            background: #2a2a2a;
-            padding: 20px;
+            width: 360px;
+            background: linear-gradient(180deg, #1a1a1a 0%, #2a2a2a 100%);
+            padding: 0;
             overflow-y: auto;
-            border-right: 2px solid #444;
+            border-right: 3px solid #333;
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.5);
+        }
+        
+        .sidebar-header {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        
+        .sidebar-content {
+            padding: 20px;
+        }
+        
+        .card {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 1px solid #444;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .card-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #4CAF50;
+            margin: 0;
         }
         
         #map-container {
@@ -40,8 +77,115 @@
         
         h1 {
             font-size: 24px;
-            margin-bottom: 20px;
+            margin: 0;
+            color: white;
+            font-weight: 600;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .estop-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #f44336 0%, #c62828 100%);
+            color: white;
+            border: 3px solid #fff;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4);
+            margin-bottom: 10px;
+        }
+        
+        .manual-mode-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+            color: white;
+            border: 3px solid #fff;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 15px rgba(33, 150, 243, 0.4);
+            margin-bottom: 10px;
+        }
+        
+        .manual-mode-btn.active {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.6);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 4px 15px rgba(76, 175, 80, 0.6); }
+            50% { box-shadow: 0 4px 25px rgba(76, 175, 80, 0.9); }
+        }
+        
+        .manual-mode-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(33, 150, 243, 0.6);
+        }
+        
+        .manual-mode-btn.active:hover {
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.8);
+        }
+        
+        .manual-mode-btn:active {
+            transform: translateY(0);
+        }
+        
+        .estop-btn:hover {
+            background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(244, 67, 54, 0.6);
+        }
+        
+        .estop-btn:active {
+            transform: scale(0.95);
+        }
+        
+        .zone-type-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .zone-type-btn {
+            flex: 1;
+            padding: 10px;
+            background: #333;
+            border: 2px solid #555;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .zone-type-btn.active {
+            border-color: #4CAF50;
+            background: rgba(76, 175, 80, 0.2);
             color: #4CAF50;
+        }
+        
+        .zone-type-btn.no-go.active {
+            border-color: #f44336;
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+        
+        .zone-type-btn.speed.active {
+            border-color: #FFC107;
+            background: rgba(255, 193, 7, 0.2);
+            color: #FFC107;
         }
         
         h2 {
@@ -160,6 +304,33 @@
             background: #0b7dda;
         }
         
+        .tool-btn {
+            flex: 1;
+            min-width: 60px;
+            padding: 12px 8px;
+            background: #333;
+            border: 2px solid #555;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 18px;
+            text-align: center;
+        }
+        
+        .tool-btn:hover {
+            background: #444;
+            border-color: #666;
+            transform: translateY(-2px);
+        }
+        
+        .tool-btn.active {
+            background: rgba(76, 175, 80, 0.2);
+            border-color: #4CAF50;
+            color: #4CAF50;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
+        }
+        
         .status {
             padding: 10px;
             border-radius: 4px;
@@ -194,32 +365,121 @@
             margin-bottom: 10px;
         }
         
-        .zoom-controls {
+        /* Map Toolbar */
+        .map-toolbar {
             position: absolute;
             top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            background: rgba(42, 42, 42, 0.95);
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+        
+        .toolbar-group {
+            display: flex;
+            gap: 5px;
+            padding: 0 10px;
+            border-right: 1px solid #555;
+        }
+        
+        .toolbar-group:last-child {
+            border-right: none;
+        }
+        
+        .tool-btn {
+            width: 40px;
+            height: 40px;
+            background: #2a2a2a;
+            color: white;
+            border: 2px solid #555;
+            border-radius: 6px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        
+        .tool-btn:hover {
+            background: #3a3a3a;
+            border-color: #4CAF50;
+            transform: translateY(-2px);
+        }
+        
+        .tool-btn.active {
+            background: #4CAF50;
+            border-color: #4CAF50;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+        
+        .tool-btn .tooltip {
+            position: absolute;
+            bottom: -35px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+        
+        .tool-btn:hover .tooltip {
+            opacity: 1;
+        }
+        
+        .zoom-level {
+            display: flex;
+            align-items: center;
+            color: #aaa;
+            font-size: 14px;
+            font-weight: bold;
+            min-width: 60px;
+            justify-content: center;
+        }
+        
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
             right: 20px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 5px;
             z-index: 100;
         }
         
         .zoom-btn {
-            width: 40px;
-            height: 40px;
-            background: #333;
+            width: 45px;
+            height: 45px;
+            background: rgba(42, 42, 42, 0.95);
             color: white;
             border: 2px solid #555;
-            border-radius: 4px;
-            font-size: 20px;
+            border-radius: 8px;
+            font-size: 22px;
             display: flex;
             align-items: center;
             justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            backdrop-filter: blur(10px);
         }
         
         .zoom-btn:hover {
-            background: #444;
+            background: #3a3a3a;
             border-color: #4CAF50;
+            transform: scale(1.1);
         }
         
         .zone-marker {
@@ -234,6 +494,16 @@
             transition: all 0.2s;
             z-index: 10;
             box-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
+        }
+        
+        .zone-marker.no-go {
+            background: #f44336;
+            box-shadow: 0 0 15px rgba(244, 67, 54, 0.9);
+        }
+        
+        .zone-marker.speed-zone {
+            background: #FFC107;
+            box-shadow: 0 0 10px rgba(255, 193, 7, 0.8);
         }
         
         .zone-marker:hover {
@@ -349,6 +619,268 @@
         .confirm-btn-no:hover {
             background: #666;
         }
+        
+        /* Notification Popup */
+        .notification-popup {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 10001;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.3s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .notification-dialog {
+            background: linear-gradient(145deg, #2a2a2a, #1f1f1f);
+            padding: 40px;
+            border-radius: 12px;
+            max-width: 450px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+            border: 2px solid #444;
+            animation: slideDown 0.3s;
+        }
+        
+        @keyframes slideDown {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .notification-icon {
+            font-size: 64px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .notification-title {
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        
+        .notification-message {
+            color: #ccc;
+            font-size: 16px;
+            text-align: center;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        
+        .notification-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .notification-btn {
+            padding: 12px 28px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+            transition: all 0.2s;
+            min-width: 120px;
+        }
+        
+        .notification-btn-success {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .notification-btn-success:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+        }
+        
+        .notification-btn-warning {
+            background: #FFC107;
+            color: #000;
+        }
+        
+        .notification-btn-warning:hover {
+            background: #ffb300;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 193, 7, 0.4);
+        }
+        
+        .notification-btn-secondary {
+            background: #666;
+            color: white;
+        }
+        
+        .notification-btn-secondary:hover {
+            background: #777;
+            transform: translateY(-2px);
+        }
+        
+        /* Collapsible Section */
+        .collapsible-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            padding: 8px 0;
+            user-select: none;
+        }
+        
+        .collapsible-header:hover h2 {
+            color: #4CAF50;
+        }
+        
+        .collapse-icon {
+            font-size: 18px;
+            transition: transform 0.3s;
+            color: #4CAF50;
+        }
+        
+        .collapse-icon.collapsed {
+            transform: rotate(-90deg);
+        }
+        
+        .collapsible-content {
+            max-height: 400px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        
+        .collapsible-content.collapsed {
+            max-height: 0;
+            overflow: hidden;
+        }
+        
+        /* Custom scrollbar for zones list */
+        .collapsible-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .collapsible-content::-webkit-scrollbar-track {
+            background: #1a1a1a;
+            border-radius: 4px;
+        }
+        
+        .collapsible-content::-webkit-scrollbar-thumb {
+            background: #4CAF50;
+            border-radius: 4px;
+        }
+        
+        .collapsible-content::-webkit-scrollbar-thumb:hover {
+            background: #45a049;
+        }
+        
+        /* Joystick Control */
+        .joystick-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background: #333;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .joystick-pad {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            background: radial-gradient(circle, #2a2a2a, #1a1a1a);
+            border: 3px solid #555;
+            border-radius: 50%;
+            margin: 20px 0;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+        
+        .joystick-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            background: #666;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        
+        .joystick-btn {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(145deg, #4CAF50, #45a049);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: white;
+            transition: all 0.1s;
+            user-select: none;
+        }
+        
+        .joystick-btn:active {
+            transform: scale(0.9);
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.8);
+        }
+        
+        .joystick-btn.up {
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        
+        .joystick-btn.down {
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        
+        .joystick-btn.left {
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
+        .joystick-btn.right {
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
+        .joystick-info {
+            text-align: center;
+            color: #aaa;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        
+        .speed-slider {
+            width: 100%;
+            margin-top: 15px;
+        }
+        
+        .speed-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #aaa;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
     </style>
 </head>
 <body>
@@ -363,12 +895,72 @@
         </div>
     </div>
     
+    <!-- Notification Popup -->
+    <div id="notificationPopup" class="notification-popup">
+        <div class="notification-dialog">
+            <div id="notificationIcon" class="notification-icon"></div>
+            <div id="notificationTitle" class="notification-title"></div>
+            <div id="notificationMessage" class="notification-message"></div>
+            <div id="notificationButtons" class="notification-buttons"></div>
+        </div>
+    </div>
+    
     <div id="container">
         <div id="sidebar">
-            <h1>🗺️ Zone Navigator</h1>
+            <div class="sidebar-header">
+                <h1>Zone Navigator</h1>
+            </div>
             
-            <div class="controls">
-                <h2>Add New Zone</h2>
+            <div class="sidebar-content">
+            <!-- MANUAL MODE BUTTON -->
+            <button class="manual-mode-btn" id="manual-mode-btn" onclick="toggleManualMode()" title="Toggle Manual Control (M)">
+                🕹️ MANUAL MODE
+            </button>
+            
+            <!-- E-STOP -->
+            <button class="estop-btn" onclick="emergencyStop()" title="Emergency Stop (Press E)">
+                🛑 E-STOP
+            </button>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Map Tools</h3>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button class="tool-btn" onclick="setMapTool('pan')" id="pan-tool" title="Pan/Hand Tool (H)">
+                        Pan
+                    </button>
+                    <button class="tool-btn active" onclick="setMapTool('select')" id="select-tool" title="Select Tool (V)">
+                        Select
+                    </button>
+                    <button class="tool-btn" onclick="setMapTool('edit')" id="edit-tool" title="Edit Zones (M)">
+                        Move
+                    </button>
+                    <button class="tool-btn" onclick="resetView()" title="Reset View (R)">
+                        Reset
+                    </button>
+                    <button class="tool-btn" onclick="fitToScreen()" title="Fit to Screen (F)">
+                        Fit
+                    </button>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Add New Zone</h3>
+                </div>
+                <div class="zone-type-selector">
+                    <button class="zone-type-btn active" onclick="setZoneType('normal')" id="zone-type-normal">
+                        Normal
+                    </button>
+                    <button class="zone-type-btn no-go" onclick="setZoneType('no-go')" id="zone-type-no-go">
+                        NO-GO
+                    </button>
+                    <button class="zone-type-btn speed" onclick="setZoneType('speed')" id="zone-type-speed">
+                        Speed
+                    </button>
+                </div>
+            <div class="controls" style="background: transparent; padding: 0; margin: 0;">
                 <div class="input-group">
                     <label>Zone Name:</label>
                     <input type="text" id="zone-name" placeholder="e.g., ZONE1, LOADING_DOCK">
@@ -385,22 +977,97 @@
                     <label>Orientation (rad):</label>
                     <input type="number" id="zone-theta" step="0.1" value="0" placeholder="0 = facing right">
                 </div>
-                <button class="btn-save" onclick="saveZone()">💾 Save Zone</button>
+                <div class="input-group" id="speed-limit-group" style="display: none;">
+                    <label>Speed Limit (m/s):</label>
+                    <input type="number" id="zone-speed" step="0.1" value="0.3" min="0.1" max="1.0" placeholder="0.3">
+                </div>
+                <button class="btn-save" onclick="saveZone()">Save Zone</button>
                 <div id="status"></div>
             </div>
+            </div>
             
-            <h2>Saved Zones</h2>
-            <ul class="zone-list" id="zone-list">
-                <li class="loading">Loading zones...</li>
-            </ul>
+            <div class="card">
+                <div class="collapsible-header" onclick="toggleZonesCollapse()" style="margin: 0; padding: 0;">
+                    <h3 class="card-title">Saved Zones</h3>
+                    <span class="collapse-icon" id="zones-collapse-icon">v</span>
+                </div>
+                <div class="collapsible-content" id="zones-content">
+                    <ul class="zone-list" id="zone-list" style="margin: 10px 0 0 0;">
+                        <li class="loading">Loading zones...</li>
+                    </ul>
+                </div>
+            </div>
             
-            <div id="safety-controls" style="display: none; margin-top: 20px;">
+            <div class="card">
+                <div class="collapsible-header" onclick="toggleManualCollapse()" style="margin: 0; padding: 0;">
+                    <h3 class="card-title">Manual Control</h3>
+                    <span class="collapse-icon collapsed" id="manual-collapse-icon">v</span>
+                </div>
+                <div class="collapsible-content collapsed" id="manual-content">
+                    <div class="joystick-container">
+                        <div class="joystick-pad">
+                            <div class="joystick-center"></div>
+                            <div class="joystick-btn up" onmousedown="startMoving('forward')" onmouseup="stopMoving()" ontouchstart="startMoving('forward')" ontouchend="stopMoving()">^</div>
+                            <div class="joystick-btn down" onmousedown="startMoving('backward')" onmouseup="stopMoving()" ontouchstart="startMoving('backward')" ontouchend="stopMoving()">v</div>
+                            <div class="joystick-btn left" onmousedown="startMoving('rotate_left')" onmouseup="stopMoving()" ontouchstart="startMoving('rotate_left')" ontouchend="stopMoving()"><</div>
+                            <div class="joystick-btn right" onmousedown="startMoving('rotate_right')" onmouseup="stopMoving()" ontouchstart="startMoving('rotate_right')" ontouchend="stopMoving()">></div>
+                        </div>
+                        <div class="speed-label">
+                            <span>Speed:</span>
+                            <span id="speed-value">0.3 m/s</span>
+                        </div>
+                        <input type="range" class="speed-slider" id="speed-slider" min="0.1" max="1.0" step="0.1" value="0.3" oninput="updateSpeed(this.value)">
+                        <div class="joystick-info">
+                            Use arrow buttons or keyboard (W/A/S/D) to control robot
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <button class="btn-save" style="background: #9C27B0; width: 100%;" onclick="toggleSequence()" id="sequence-btn">
+                    Start Sequence
+                </button>
+                <div id="sequence-status" style="display: none; margin-top: 10px; padding: 10px; background: rgba(156, 39, 176, 0.2); border-radius: 4px; font-size: 12px;">
+                    <div style="color: #9C27B0; font-weight: bold;">Sequence Active</div>
+                    <div id="sequence-progress" style="color: #ccc; margin-top: 5px;"></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Path Drawing</h2>
+                <button class="btn-save" style="background: #2196F3; width: 100%;" onclick="togglePathDrawing()" id="path-draw-btn">
+                    Start Drawing
+                </button>
+                <div id="path-status" style="display: none; margin-top: 10px; padding: 10px; background: rgba(33, 150, 243, 0.2); border-radius: 4px; font-size: 12px;">
+                    <div style="color: #2196F3; font-weight: bold;">Drawing Mode Active</div>
+                    <div id="path-point-count" style="color: #ccc; margin-top: 5px;">Points: 0</div>
+                    <div style="margin-top: 10px; display: flex; gap: 8px;">
+                        <button class="btn-save" style="background: #4CAF50; flex: 1; padding: 6px;" onclick="sendDrawnPath()">
+                            Follow Path
+                        </button>
+                        <button class="btn-delete" style="flex: 1; padding: 6px;" onclick="clearDrawnPath()">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+                <div id="path-following-status" style="display: none; margin-top: 10px; padding: 10px; background: rgba(76, 175, 80, 0.2); border-radius: 4px; font-size: 12px;">
+                    <div style="color: #4CAF50; font-weight: bold;">Path Following Active</div>
+                    <div id="path-following-progress" style="color: #ccc; margin-top: 5px;"></div>
+                    <button class="btn-delete" style="width: 100%; margin-top: 10px; padding: 6px;" onclick="stopPathFollowing()">
+                        Stop Path
+                    </button>
+                </div>
+            </div>
+            
+            <div class="card" id="safety-controls" style="display: none;">
                 <button class="btn-save" style="background: #FFC107; width: 100%;" onclick="forceResume()">
-                    ⚠ Force Resume Navigation
+                    Force Resume Navigation
                 </button>
                 <p style="font-size: 12px; color: #FFC107; margin-top: 10px; text-align: center;">
                     Use only if obstacles are cleared
                 </p>
+            </div>
             </div>
         </div>
         
@@ -408,8 +1075,8 @@
             <canvas id="canvas"></canvas>
             <div class="zoom-controls">
                 <button class="zoom-btn" onclick="zoomIn()">+</button>
-                <button class="zoom-btn" onclick="zoomOut()">−</button>
-                <button class="zoom-btn" onclick="resetView()">⌂</button>
+                <button class="zoom-btn" onclick="zoomOut()">-</button>
+                <button class="zoom-btn" onclick="resetView()">H</button>
             </div>
         </div>
     </div>
@@ -428,13 +1095,42 @@
         let offsetX = 0;
         let offsetY = 0;
         let isDragging = false;
+        let mapReady = false;
+        
+        // Map tools
+        let currentTool = 'select';  // 'select', 'pan', 'edit'
+        let editingZone = null;
+        let spaceKeyPressed = false;
+        
+        // Zone creation
+        let currentZoneType = 'normal';  // 'normal', 'no-go', 'speed'
+        let eStopActive = false;
         
         // Custom confirmation dialog
         let confirmCallback = null;
         
-        function showConfirm(message) {
+        // Sequence navigation state
+        let sequenceActive = false;
+        let previousSequenceActive = false;
+        
+        // Path drawing state
+        let isDrawingPath = false;
+        let drawnPath = [];  // Array of {x, y} in world coordinates
+        let pathFollowingActive = false;
+        let previousPathFollowingActive = false;
+        let currentPathWaypoint = 0;  // Current waypoint being navigated to
+        let alternativePathWarningShown = false;  // Track if we showed path deviation warning
+        
+        // Safety state tracking
+        let previousSafetyStopActive = false;
+        
+        function showConfirm(message, yesText = 'OK', noText = 'Cancel') {
             return new Promise((resolve) => {
                 document.getElementById('confirmMessage').textContent = message;
+                const yesBtn = document.querySelector('.confirm-btn-yes');
+                const noBtn = document.querySelector('.confirm-btn-no');
+                yesBtn.textContent = yesText;
+                noBtn.textContent = noText;
                 document.getElementById('confirmModal').style.display = 'flex';
                 confirmCallback = resolve;
             });
@@ -447,6 +1143,167 @@
                 confirmCallback = null;
             }
         }
+        
+        function loadSequenceStatus() {
+            fetch('/api/sequence/status')
+                .then(response => response.json())
+                .then(data => {
+                    sequenceActive = data.active;
+                    updateSequenceUI(data);
+                })
+                .catch(error => console.error('Error loading sequence status:', error));
+        }
+        
+        function updateSequenceUI(status) {
+            const btn = document.getElementById('sequence-btn');
+            const statusDiv = document.getElementById('sequence-status');
+            const progressDiv = document.getElementById('sequence-progress');
+            
+            // Detect sequence completion (check BEFORE updating the state)
+            if (previousSequenceActive && !status.active) {
+                showNotification(
+                    '✅',
+                    'SEQUENCE COMPLETE',
+                    `Successfully navigated through all zones!`,
+                    [{text: 'OK', style: 'success', action: closeNotification}]
+                );
+            }
+            
+            previousSequenceActive = status.active;
+            sequenceActive = status.active;
+            
+            if (status.active) {
+                btn.textContent = '⏹ Stop Sequence';
+                btn.style.background = '#f44336';
+                statusDiv.style.display = 'block';
+                progressDiv.textContent = `Zone ${status.current_index + 1}/${status.total_zones}: ${status.current_zone}`;
+            } else {
+                btn.textContent = '▶ Start Sequence';
+                btn.style.background = '#9C27B0';
+                statusDiv.style.display = 'none';
+            }
+        }
+        
+        function loadPathFollowingStatus() {
+            fetch('/api/path/status')
+                .then(response => response.json())
+                .then(data => {
+                    pathFollowingActive = data.active;
+                    updatePathFollowingUI(data);
+                })
+                .catch(error => console.error('Error loading path following status:', error));
+        }
+        
+        function updatePathFollowingUI(status) {
+            const followingStatusDiv = document.getElementById('path-following-status');
+            const progressDiv = document.getElementById('path-following-progress');
+            const drawingStatusDiv = document.getElementById('path-status');
+            const drawBtn = document.getElementById('path-draw-btn');
+            
+            // Detect path completion (check BEFORE updating the state)
+            if (previousPathFollowingActive && !status.active) {
+                showNotification(
+                    '✅',
+                    'PATH DRAWING COMPLETE',
+                    `Robot successfully followed the drawn path!`,
+                    [{text: 'OK', style: 'success', action: closeNotification}]
+                );
+            }
+            
+            previousPathFollowingActive = status.active;
+            pathFollowingActive = status.active;
+            
+            if (status.active) {
+                followingStatusDiv.style.display = 'block';
+                drawingStatusDiv.style.display = 'none';
+                drawBtn.style.display = 'none';
+                progressDiv.textContent = `Waypoint ${status.current_index + 1}/${status.total_waypoints}`;
+                currentPathWaypoint = status.current_index;  // Update for visualization
+            } else {
+                followingStatusDiv.style.display = 'none';
+                drawBtn.style.display = 'block';
+                currentPathWaypoint = 0;
+            }
+        }
+        
+        async function stopPathFollowing() {
+            const confirmed = await showConfirm('Stop path following?', 'Stop', 'Cancel');
+            if (!confirmed) return;
+            
+            fetch('/api/path/stop', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                    loadPathFollowingStatus();
+                } else {
+                    showStatus(data.message || 'Failed to stop path', 'error');
+                }
+            })
+            .catch(error => {
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        async function toggleSequence() {
+            if (sequenceActive) {
+                // Stop sequence
+                const confirmed = await showConfirm('Stop the current sequence?', 'Stop', 'Cancel');
+                if (!confirmed) return;
+                
+                fetch('/api/sequence/stop', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.ok) {
+                        showStatus(data.message, 'success');
+                        loadSequenceStatus();
+                    } else {
+                        showStatus(data.message || 'Failed to stop sequence', 'error');
+                    }
+                })
+                .catch(error => {
+                    showStatus('Error: ' + error, 'error');
+                });
+            } else {
+                // Start sequence with all zones in order
+                const zoneNames = Object.keys(zones);
+                
+                if (zoneNames.length === 0) {
+                    showStatus('No zones to navigate', 'error');
+                    return;
+                }
+                
+                const confirmed = await showConfirm(`Start sequence through ${zoneNames.length} zones?`, 'Start', 'Cancel');
+                if (!confirmed) return;
+                
+                fetch('/api/sequence/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({zones: zoneNames})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.ok) {
+                        showStatus(data.message, 'success');
+                        loadSequenceStatus();
+                    } else {
+                        showStatus(data.message || 'Failed to start sequence', 'error');
+                    }
+                })
+                .catch(error => {
+                    showStatus('Error: ' + error, 'error');
+                });
+            }
+        }
+        
         let dragStartX = 0;
         let dragStartY = 0;
 
@@ -458,6 +1315,7 @@
             loadMap();
             loadZones();
             loadRobotPose();
+            loadSequenceStatus();
             
             // Set up canvas interaction
             canvas.addEventListener('click', onCanvasClick);
@@ -465,11 +1323,22 @@
             canvas.addEventListener('mousemove', onMouseMove);
             canvas.addEventListener('mouseup', onMouseUp);
             canvas.addEventListener('wheel', onWheel);
+            canvas.addEventListener('contextmenu', e => e.preventDefault());
             
             // Refresh zones every 2 seconds
             setInterval(() => {
                 loadZones();
             }, 2000);
+            
+            // Refresh sequence status every second
+            setInterval(() => {
+                loadSequenceStatus();
+            }, 1000);
+            
+            // Refresh path following status every second
+            setInterval(() => {
+                loadPathFollowingStatus();
+            }, 1000);
             
             // Refresh robot position every 10ms for real-time tracking
             setInterval(() => {
@@ -497,6 +1366,7 @@
                         canvas.width = window.innerWidth - 320;
                         canvas.height = window.innerHeight;
                         mapData.image = img;
+                        mapReady = true;
                         
                         // Center the map
                         offsetX = (canvas.width - img.width) / 2;
@@ -504,10 +1374,12 @@
                         
                         drawMap();
                     };
+                    img.onerror = function() {
+                        showStatus('Failed to load map image', 'error');
+                    };
                     img.src = 'data:image/png;base64,' + data.image;
                 })
                 .catch(error => {
-                    console.error('Error loading map:', error);
                     showStatus('Failed to load map', 'error');
                 });
         }
@@ -532,6 +1404,20 @@
                     safetyStopActive = data.safety_stop || false;
                     overrideActive = data.override_active || false;
                     
+                    // Detect safety stop activation
+                    if (safetyStopActive && !previousSafetyStopActive) {
+                        showNotification(
+                            '⚠️',
+                            'SAFETY STOP ACTIVE',
+                            'Robot stopped due to low localization confidence. Check for obstacles or force resume navigation.',
+                            [
+                                {text: 'Force Resume', style: 'warning', action: () => { closeNotification(); forceResume(); }},
+                                {text: 'Dismiss', style: 'secondary', action: closeNotification}
+                            ]
+                        );
+                    }
+                    previousSafetyStopActive = safetyStopActive;
+                    
                     // Show/hide safety controls based on safety stop status
                     const safetyControls = document.getElementById('safety-controls');
                     if (safetyControls) {
@@ -552,10 +1438,59 @@
             fetch('/api/path')
                 .then(response => response.json())
                 .then(data => {
-                    currentPath = data.path;
+                    const newPath = data.path;
+                    
+                    // Check if Nav2 generated path differs from drawn path during path following
+                    if (pathFollowingActive && drawnPath.length > 0 && newPath && newPath.length > 0 && !alternativePathWarningShown) {
+                        const pathDeviation = checkPathDeviation(drawnPath, newPath);
+                        if (pathDeviation > 1.0) {  // More than 1 meter average deviation
+                            alternativePathWarningShown = true;
+                            showNotification(
+                                '\u26a0\ufe0f',
+                                'ALTERNATIVE PATH DETECTED',
+                                `Nav2 cannot follow the exact drawn path and found an alternative route (avg deviation: ${pathDeviation.toFixed(2)}m). Continue with alternative path or cancel?`,
+                                [
+                                    {text: 'Continue', style: 'success', action: closeNotification},
+                                    {text: 'Cancel Mission', style: 'warning', action: () => { closeNotification(); stopPathFollowing(); }}
+                                ]
+                            );
+                        }
+                    }
+                    
+                    // Reset warning flag when path following stops
+                    if (!pathFollowingActive) {
+                        alternativePathWarningShown = false;
+                    }
+                    
+                    currentPath = newPath;
                     if (mapData) drawMap();
                 })
                 .catch(error => console.error('Error loading path:', error));
+        }
+        
+        function checkPathDeviation(drawnPath, navPath) {
+            // Calculate average distance between drawn path waypoints and Nav2 path
+            if (!drawnPath || drawnPath.length === 0 || !navPath || navPath.length === 0) {
+                return 0;
+            }
+            
+            let totalDeviation = 0;
+            let count = 0;
+            
+            // For each drawn waypoint, find closest point in Nav2 path
+            for (const drawnPoint of drawnPath) {
+                let minDistance = Infinity;
+                for (const navPoint of navPath) {
+                    const dx = drawnPoint.x - navPoint.x;
+                    const dy = drawnPoint.y - navPoint.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    minDistance = Math.min(minDistance, distance);
+                }
+                totalDeviation += minDistance;
+                count++;
+            }
+            
+            return count > 0 ? totalDeviation / count : 0;
         }
         
         function loadScan() {
@@ -615,7 +1550,7 @@
         }
 
         function drawMap() {
-            if (!mapData || !mapData.image) return;
+            if (!mapReady || !mapData || !mapData.image) return;
             
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -630,9 +1565,23 @@
             for (const [name, zone] of Object.entries(zones)) {
                 const [px, py] = worldToPixel(zone.position.x, zone.position.y);
                 
+                // Determine zone color based on type
+                const metadata = zone.metadata || {};
+                const zoneType = metadata.type || 'normal';
+                let zoneColor = '#4CAF50';  // Normal (green)
+                let zoneIcon = '';
+                
+                if (zoneType === 'no-go') {
+                    zoneColor = '#f44336';  // NO-GO (red)
+                    zoneIcon = '[X]';
+                } else if (zoneType === 'speed') {
+                    zoneColor = '#FFC107';  // Speed zone (amber)
+                    zoneIcon = '[S]';
+                }
+                
                 // Draw marker
                 ctx.save();
-                ctx.fillStyle = '#4CAF50';
+                ctx.fillStyle = zoneColor;
                 ctx.strokeStyle = 'white';
                 ctx.lineWidth = 3;
                 ctx.beginPath();
@@ -641,34 +1590,54 @@
                 ctx.stroke();
                 ctx.restore();
                 
-                // Draw label
+                // Draw NO-GO zone exclusion radius
+                if (zoneType === 'no-go') {
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(244, 67, 54, 0.15)';
+                    ctx.strokeStyle = 'rgba(244, 67, 54, 0.5)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    const exclusionRadius = 1.0;  // 1 meter radius
+                    const pixelRadius = exclusionRadius / mapData.resolution * scale;
+                    ctx.beginPath();
+                    ctx.arc(px, py, pixelRadius, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.restore();
+                }
+                
+                // Draw label with type indicator
                 ctx.save();
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-                ctx.strokeStyle = '#4CAF50';
+                ctx.strokeStyle = zoneColor;
                 ctx.lineWidth = 1;
-                const textWidth = ctx.measureText(name).width;
+                const labelText = zoneType !== 'normal' ? `${zoneIcon} ${name}` : name;
+                const textWidth = ctx.measureText(labelText).width;
                 ctx.fillRect(px - textWidth/2 - 5, py - 30, textWidth + 10, 20);
                 ctx.strokeRect(px - textWidth/2 - 5, py - 30, textWidth + 10, 20);
-                ctx.fillStyle = '#4CAF50';
+                ctx.fillStyle = zoneColor;
                 ctx.font = 'bold 12px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText(name, px, py - 16);
+                ctx.fillText(labelText, px, py - 16);
                 ctx.restore();
                 
-                // Draw orientation arrow
-                const angle = Math.atan2(zone.orientation.z, zone.orientation.w) * 2;
-                const arrowLen = 20;
-                ctx.save();
-                ctx.strokeStyle = '#FFD700';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(px, py);
-                ctx.lineTo(
-                    px + Math.cos(angle) * arrowLen,
-                    py + Math.sin(angle) * arrowLen
-                );
-                ctx.stroke();
-                ctx.restore();
+                // Draw orientation arrow (skip for NO-GO zones)
+                if (zoneType !== 'no-go') {
+                    const angle = Math.atan2(zone.orientation.z, zone.orientation.w) * 2;
+                    const arrowLen = 20;
+                    ctx.save();
+                    ctx.strokeStyle = '#FFD700';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(px, py);
+                    ctx.lineTo(
+                        px + Math.cos(angle) * arrowLen,
+                        py + Math.sin(angle) * arrowLen
+                    );
+                    ctx.stroke();
+                    ctx.restore();
+                }
             }
             
             // Draw navigation path
@@ -841,6 +1810,83 @@
                     ctx.restore();
                 }
             }
+            
+            // Draw user-drawn path (show during drawing OR path following)
+            if ((isDrawingPath || pathFollowingActive) && drawnPath.length > 0) {
+                ctx.save();
+                
+                // Draw path line
+                if (drawnPath.length > 1) {
+                    ctx.strokeStyle = '#9C27B0';
+                    ctx.lineWidth = 4;
+                    ctx.setLineDash([]);
+                    ctx.beginPath();
+                    
+                    const [startX, startY] = worldToPixel(drawnPath[0].x, drawnPath[0].y);
+                    ctx.moveTo(startX, startY);
+                    
+                    for (let i = 1; i < drawnPath.length; i++) {
+                        const [px, py] = worldToPixel(drawnPath[i].x, drawnPath[i].y);
+                        ctx.lineTo(px, py);
+                    }
+                    
+                    ctx.stroke();
+                }
+                
+                // Draw waypoint markers
+                for (let i = 0; i < drawnPath.length; i++) {
+                    const [px, py] = worldToPixel(drawnPath[i].x, drawnPath[i].y);
+                    
+                    // Highlight current waypoint during path following
+                    if (pathFollowingActive && i === currentPathWaypoint) {
+                        ctx.fillStyle = '#4CAF50';  // Green for current
+                        ctx.strokeStyle = 'white';
+                        ctx.lineWidth = 3;
+                    } else if (pathFollowingActive && i < currentPathWaypoint) {
+                        ctx.fillStyle = '#666';  // Gray for completed
+                        ctx.strokeStyle = 'white';
+                        ctx.lineWidth = 2;
+                    } else {
+                        ctx.fillStyle = '#9C27B0';  // Purple for upcoming
+                        ctx.strokeStyle = 'white';
+                        ctx.lineWidth = 2;
+                    }
+                    
+                    ctx.beginPath();
+                    ctx.arc(px, py, 6, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Draw point number
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                    if (pathFollowingActive && i === currentPathWaypoint) {
+                        ctx.strokeStyle = '#4CAF50';
+                    } else if (pathFollowingActive && i < currentPathWaypoint) {
+                        ctx.strokeStyle = '#666';
+                    } else {
+                        ctx.strokeStyle = '#9C27B0';
+                    }
+                    ctx.lineWidth = 1;
+                    const numText = (i + 1).toString();
+                    const numWidth = ctx.measureText(numText).width;
+                    ctx.fillRect(px - numWidth/2 - 3, py - 22, numWidth + 6, 14);
+                    ctx.strokeRect(px - numWidth/2 - 3, py - 22, numWidth + 6, 14);
+                    if (pathFollowingActive && i === currentPathWaypoint) {
+                        ctx.fillStyle = '#4CAF50';
+                    } else if (pathFollowingActive && i < currentPathWaypoint) {
+                        ctx.fillStyle = '#666';
+                    } else {
+                        ctx.fillStyle = '#9C27B0';
+                    }
+                    ctx.font = 'bold 10px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(numText, px, py - 12);
+                    ctx.restore();
+                }
+                
+                ctx.restore();
+            }
         }
 
         function worldToPixel(wx, wy) {
@@ -886,10 +1932,18 @@
             
             const [wx, wy] = pixelToWorld(x, y);
             
-            document.getElementById('zone-x').value = wx.toFixed(2);
-            document.getElementById('zone-y').value = wy.toFixed(2);
-            
-            showStatus('Position selected! Enter zone name and click Save.', 'info');
+            if (isDrawingPath) {
+                // Add point to drawn path
+                drawnPath.push({x: wx, y: wy});
+                updatePathUI();
+                drawMap();
+            } else {
+                // Original zone selection behavior
+                document.getElementById('zone-x').value = wx.toFixed(2);
+                document.getElementById('zone-y').value = wy.toFixed(2);
+                
+                showStatus('Position selected! Enter zone name and click Save.', 'info');
+            }
         }
 
         function onMouseDown(e) {
@@ -911,35 +1965,82 @@
         }
 
         function onMouseUp(e) {
+            if (editingZone && isDragging) {
+                // Save the edited zone position
+                saveEditedZone(editingZone);
+                editingZone = null;
+            }
             isDragging = false;
-            canvas.style.cursor = 'crosshair';
+            updateCursor();
         }
 
         function onWheel(e) {
             e.preventDefault();
+            
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            // World coordinates before zoom
+            const [wx, wy] = pixelToWorld(mouseX, mouseY);
+            
+            // Apply zoom
             const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            const oldScale = scale;
             scale *= delta;
-            scale = Math.max(0.5, Math.min(5, scale));
+            scale = Math.max(0.1, Math.min(10, scale));
+            
+            // Adjust offset to zoom towards mouse position
+            const [newPx, newPy] = worldToPixel(wx, wy);
+            offsetX += mouseX - newPx;
+            offsetY += mouseY - newPy;
+            
+            updateZoomLevel();
             drawMap();
         }
 
         function zoomIn() {
             scale *= 1.2;
-            scale = Math.min(5, scale);
+            scale = Math.min(10, scale);
+            updateZoomLevel();
             drawMap();
         }
-
+        
         function zoomOut() {
             scale *= 0.8;
-            scale = Math.max(0.5, scale);
+            scale = Math.max(0.1, scale);
+            updateZoomLevel();
             drawMap();
         }
-
+        
+        function updateZoomLevel() {
+            const zoomPercent = Math.round(scale * 100);
+            const zoomElement = document.getElementById('zoom-level');
+            if (zoomElement) {
+                zoomElement.textContent = zoomPercent + '%';
+            }
+        }
+        
         function resetView() {
             if (mapData && mapData.image) {
                 scale = 1;
                 offsetX = (canvas.width - mapData.image.width) / 2;
                 offsetY = (canvas.height - mapData.image.height) / 2;
+                updateZoomLevel();
+                drawMap();
+            }
+        }
+        
+        function fitToScreen() {
+            if (mapData && mapData.image) {
+                const padding = 50;
+                const scaleX = (canvas.width - padding * 2) / mapData.image.width;
+                const scaleY = (canvas.height - padding * 2) / mapData.image.height;
+                scale = Math.min(scaleX, scaleY);
+                
+                offsetX = (canvas.width - mapData.image.width * scale) / 2;
+                offsetY = (canvas.height - mapData.image.height * scale) / 2;
+                updateZoomLevel();
                 drawMap();
             }
         }
@@ -949,6 +2050,7 @@
             const x = parseFloat(document.getElementById('zone-x').value);
             const y = parseFloat(document.getElementById('zone-y').value);
             const theta = parseFloat(document.getElementById('zone-theta').value) || 0;
+            const speedLimit = document.getElementById('zone-speed') ? parseFloat(document.getElementById('zone-speed').value) : null;
             
             if (!name) {
                 showStatus('Please enter a zone name', 'error');
@@ -960,10 +2062,19 @@
                 return;
             }
             
+            const zoneData = {
+                name, 
+                x, 
+                y, 
+                theta,
+                type: currentZoneType,
+                speed_limit: currentZoneType === 'speed' ? speedLimit : null
+            };
+            
             fetch('/api/zones/save', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({name, x, y, theta})
+                body: JSON.stringify(zoneData)
             })
             .then(response => response.json())
             .then(data => {
@@ -972,6 +2083,14 @@
                     document.getElementById('zone-name').value = '';
                     loadZones();
                 } else {
+                    if (data.warning_type === 'safety') {
+                        showNotification(
+                            '[!]',
+                            'Safety Warning',
+                            data.message,
+                            [{text: 'OK', style: 'warning', action: closeNotification}]
+                        );
+                    }
                     showStatus(data.message || 'Failed to save zone', 'error');
                 }
             })
@@ -1004,7 +2123,7 @@
         async function deleteZone(name) {
             console.log('deleteZone called with:', name);
             
-            const confirmed = await showConfirm(`Are you sure you want to delete zone "${name}"?`);
+            const confirmed = await showConfirm(`Are you sure you want to delete zone "${name}"?`, 'Delete', 'Cancel');
             
             if (!confirmed) {
                 console.log('User cancelled deletion');
@@ -1039,7 +2158,7 @@
         }
         
         async function forceResume() {
-            const confirmed = await showConfirm('Force resume navigation?\n\nOnly proceed if:\n- Obstacles are cleared\n- Robot localization improved\n- You understand the risks');
+            const confirmed = await showConfirm('Force resume navigation?\n\nOnly proceed if:\n- Obstacles are cleared\n- Robot localization improved\n- You understand the risks', 'Resume', 'Cancel');
             
             if (!confirmed) {
                 return;
@@ -1065,6 +2184,80 @@
                 showStatus('Error: ' + error, 'error');
             });
         }
+        
+        function togglePathDrawing() {
+            isDrawingPath = !isDrawingPath;
+            const btn = document.getElementById('path-draw-btn');
+            const statusDiv = document.getElementById('path-status');
+            
+            if (isDrawingPath) {
+                btn.textContent = '⏹ Stop Drawing';
+                btn.style.background = '#f44336';
+                statusDiv.style.display = 'block';
+                canvas.style.cursor = 'crosshair';
+                drawnPath = [];
+                updatePathUI();
+            } else {
+                btn.textContent = '✏️ Start Drawing';
+                btn.style.background = '#2196F3';
+                statusDiv.style.display = 'none';
+                canvas.style.cursor = 'crosshair';
+            }
+            drawMap();
+        }
+        
+        function updatePathUI() {
+            const countDiv = document.getElementById('path-point-count');
+            countDiv.textContent = `Points: ${drawnPath.length}`;
+        }
+        
+        async function sendDrawnPath() {
+            if (drawnPath.length < 2) {
+                showStatus('Path must have at least 2 points. Click on the map to add waypoints.', 'error');
+                return;
+            }
+            
+            const confirmed = await showConfirm(
+                `Follow path with ${drawnPath.length} waypoints?\n\nThe robot will navigate through all points in sequence.`,
+                'Follow Path',
+                'Cancel'
+            );
+            
+            if (!confirmed) return;
+            
+            showStatus(`Sending path with ${drawnPath.length} waypoints...`, 'info');
+            
+            fetch('/api/path/follow', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({path: drawnPath})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                    // Stop drawing mode after sending path
+                    if (isDrawingPath) {
+                        togglePathDrawing();
+                    }
+                    // Start monitoring path following
+                    loadPathFollowingStatus();
+                } else {
+                    showStatus(data.message || 'Failed to send path', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Path send error:', error);
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        function clearDrawnPath() {
+            drawnPath = [];
+            updatePathUI();
+            drawMap();
+            showStatus('Path cleared', 'info');
+        }
 
         function showStatus(message, type) {
             const status = document.getElementById('status');
@@ -1076,9 +2269,431 @@
                 status.className = 'status';
             }, 5000);
         }
-
-        // Prevent context menu on canvas
-        canvas.addEventListener('contextmenu', e => e.preventDefault());
+        
+        // Notification popup functions
+        function showNotification(icon, title, message, buttons) {
+            const popup = document.getElementById('notificationPopup');
+            const iconDiv = document.getElementById('notificationIcon');
+            const titleDiv = document.getElementById('notificationTitle');
+            const messageDiv = document.getElementById('notificationMessage');
+            const buttonsDiv = document.getElementById('notificationButtons');
+            
+            iconDiv.textContent = icon;
+            titleDiv.textContent = title;
+            messageDiv.textContent = message;
+            
+            // Clear and add buttons
+            buttonsDiv.innerHTML = '';
+            buttons.forEach(btn => {
+                const button = document.createElement('button');
+                button.className = `notification-btn notification-btn-${btn.style}`;
+                button.textContent = btn.text;
+                button.onclick = btn.action;
+                buttonsDiv.appendChild(button);
+            });
+            
+            popup.style.display = 'flex';
+        }
+        
+        function closeNotification() {
+            document.getElementById('notificationPopup').style.display = 'none';
+        }
+        
+        // Zone type selection
+        function setZoneType(type) {
+            currentZoneType = type;
+            document.querySelectorAll('.zone-type-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('zone-type-' + type).classList.add('active');
+            
+            // Show/hide speed limit input
+            const speedGroup = document.getElementById('speed-limit-group');
+            if (type === 'speed') {
+                speedGroup.style.display = 'block';
+            } else {
+                speedGroup.style.display = 'none';
+            }
+        }
+        
+        // Emergency Stop
+        function emergencyStop() {
+            if (eStopActive) {
+                showNotification(
+                    '[!]',
+                    'E-STOP ALREADY ACTIVE',
+                    'Emergency stop is already engaged. Reset to resume operations.',
+                    [{text: 'OK', style: 'warning', action: closeNotification}]
+                );
+                return;
+            }
+            
+            showNotification(
+                '[STOP]',
+                'EMERGENCY STOP ACTIVATED',
+                'All robot movement has been halted. All navigation goals cancelled.',
+                [
+                    {text: 'Reset & Resume', style: 'success', action: () => { resetEStop(); closeNotification(); }},
+                    {text: 'Keep Stopped', style: 'secondary', action: closeNotification}
+                ]
+            );
+            
+            eStopActive = true;
+            
+            // Cancel all active navigation
+            if (pathFollowingActive) stopPathFollowing();
+            if (sequenceActive) toggleSequence();
+            
+            // Send stop command
+            fetch('/api/estop/activate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .catch(error => console.error('E-STOP error:', error));
+        }
+        
+        function resetEStop() {
+            eStopActive = false;
+            fetch('/api/estop/reset', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus('E-STOP reset - operations resumed', 'success');
+            })
+            .catch(error => console.error('E-STOP reset error:', error));
+        }
+        
+        // Manual Mode Control
+        let manualModeActive = false;
+        
+        function toggleManualMode() {
+            manualModeActive = !manualModeActive;
+            const btn = document.getElementById('manual-mode-btn');
+            
+            if (manualModeActive) {
+                // Activate manual mode
+                fetch('/api/mode/manual', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    btn.classList.add('active');
+                    btn.innerHTML = '🕹️ MANUAL MODE ACTIVE';
+                    showStatus('Manual control activated - use joystick', 'success');
+                })
+                .catch(error => {
+                    console.error('Manual mode error:', error);
+                    manualModeActive = false;
+                    showStatus('Failed to activate manual mode', 'error');
+                });
+            } else {
+                // Deactivate - publish zones mode to allow auto navigation
+                const modeMsg = new XMLHttpRequest();
+                modeMsg.open('POST', '/api/mode/auto', true);
+                modeMsg.setRequestHeader('Content-Type', 'application/json');
+                modeMsg.onload = function() {
+                    btn.classList.remove('active');
+                    btn.innerHTML = '🕹️ MANUAL MODE';
+                    showStatus('Autonomous navigation active', 'info');
+                };
+                modeMsg.onerror = function() {
+                    manualModeActive = true;
+                    showStatus('Failed to switch mode', 'error');
+                };
+                modeMsg.send();
+            }
+        }
+        
+        // Map tool selection
+        function setMapTool(tool) {
+            currentTool = tool;
+            editingZone = null;
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+            const toolBtn = document.getElementById(tool + '-tool');
+            if (toolBtn) toolBtn.classList.add('active');
+            updateCursor();
+        }
+        
+        function updateCursor() {
+            if (currentTool === 'pan' || spaceKeyPressed) {
+                canvas.style.cursor = 'grab';
+            } else if (currentTool === 'edit') {
+                canvas.style.cursor = 'default';
+            } else {
+                canvas.style.cursor = 'crosshair';
+            }
+        }
+        
+        function findZoneAtPosition(wx, wy) {
+            const clickRadius = 0.3;
+            for (const [name, zone] of Object.entries(zones)) {
+                const dx = zone.position.x - wx;
+                const dy = zone.position.y - wy;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < clickRadius) {
+                    return name;
+                }
+            }
+            return null;
+        }
+        
+        function saveEditedZone(zoneName) {
+            const zone = zones[zoneName];
+            if (!zone) return;
+            
+            fetch('/api/zones/update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: zoneName,
+                    x: zone.position.x,
+                    y: zone.position.y,
+                    theta: 2 * Math.atan2(zone.orientation.z, zone.orientation.w)
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(`Zone "${zoneName}" position updated`, 'success');
+                    loadZones();
+                } else {
+                    showStatus(data.message || 'Failed to update zone', 'error');
+                }
+            })
+            .catch(error => {
+                showStatus('Error updating zone: ' + error, 'error');
+            });
+        }
+        
+        // Collapsible section controls
+        function toggleZonesCollapse() {
+            const content = document.getElementById('zones-content');
+            const icon = document.getElementById('zones-collapse-icon');
+            content.classList.toggle('collapsed');
+            icon.classList.toggle('collapsed');
+        }
+        
+        function toggleManualCollapse() {
+            const content = document.getElementById('manual-content');
+            const icon = document.getElementById('manual-collapse-icon');
+            content.classList.toggle('collapsed');
+            icon.classList.toggle('collapsed');
+        }
+        
+        // Manual control variables
+        let manualControlActive = false;
+        let manualControlInterval = null;
+        let currentDirection = null;
+        let manualSpeed = 0.3;  // m/s
+        let angularSpeed = 0.5;  // rad/s
+        
+        function updateSpeed(value) {
+            manualSpeed = parseFloat(value);
+            document.getElementById('speed-value').textContent = `${manualSpeed.toFixed(1)} m/s`;
+        }
+        
+        function startMoving(direction) {
+            currentDirection = direction;
+            
+            if (manualControlInterval) {
+                clearInterval(manualControlInterval);
+            }
+            
+            // Send velocity command immediately
+            sendVelocityCommand(direction);
+            
+            // Continue sending commands at 10Hz while button is held
+            manualControlInterval = setInterval(() => {
+                sendVelocityCommand(direction);
+            }, 100);
+        }
+        
+        function stopMoving() {
+            currentDirection = null;
+            
+            if (manualControlInterval) {
+                clearInterval(manualControlInterval);
+                manualControlInterval = null;
+            }
+            
+            // Send stop command
+            sendVelocityCommand('stop');
+        }
+        
+        function sendVelocityCommand(direction) {
+            let linear = 0;
+            let angular = 0;
+            
+            switch(direction) {
+                case 'forward':
+                    linear = manualSpeed;
+                    break;
+                case 'backward':
+                    linear = -manualSpeed;
+                    break;
+                case 'rotate_left':
+                    angular = angularSpeed;
+                    break;
+                case 'rotate_right':
+                    angular = -angularSpeed;
+                    break;
+                case 'stop':
+                    linear = 0;
+                    angular = 0;
+                    break;
+            }
+            
+            fetch('/api/manual/velocity', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    linear: linear,
+                    angular: angular
+                })
+            })
+            .catch(error => console.error('Error sending velocity command:', error));
+        }
+        
+        // Keyboard control for manual mode
+        document.addEventListener('keydown', (e) => {
+            // Only respond to keys when manual control section is expanded
+            const manualContent = document.getElementById('manual-content');
+            if (manualContent.classList.contains('collapsed')) {
+                return;
+            }
+            
+            // Prevent default for arrow keys and WASD
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'].includes(e.key)) {
+                e.preventDefault();
+            }
+            
+            if (currentDirection !== null) {
+                return; // Already moving
+            }
+            
+            switch(e.key) {
+                case 'w':
+                case 'W':
+                case 'ArrowUp':
+                    startMoving('forward');
+                    break;
+                case 's':
+                case 'S':
+                case 'ArrowDown':
+                    startMoving('backward');
+                    break;
+                case 'a':
+                case 'A':
+                case 'ArrowLeft':
+                    startMoving('rotate_left');
+                    break;
+                case 'd':
+                case 'D':
+                case 'ArrowRight':
+                    startMoving('rotate_right');
+                    break;
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            // Only respond to keys when manual control section is expanded
+            const manualContent = document.getElementById('manual-content');
+            if (manualContent.classList.contains('collapsed')) {
+                // Handle space key for temporary pan
+                if (e.key === ' ') {
+                    spaceKeyPressed = false;
+                    updateCursor();
+                }
+                return;
+            }
+            
+            switch(e.key) {
+                case 'w':
+                case 'W':
+                case 'ArrowUp':
+                case 's':
+                case 'S':
+                case 'ArrowDown':
+                case 'a':
+                case 'A':
+                case 'ArrowLeft':
+                case 'd':
+                case 'D':
+                case 'ArrowRight':
+                    stopMoving();
+                    break;
+                case ' ':
+                    spaceKeyPressed = false;
+                    updateCursor();
+                    break;
+            }
+        });
+        
+        // Map tool keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Don't trigger if typing in an input field
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+            
+            // Don't trigger WASD if manual control is active
+            const manualContent = document.getElementById('manual-content');
+            const manualActive = manualContent && !manualContent.classList.contains('collapsed');
+            
+            switch(e.key) {
+                case 'h':
+                case 'H':
+                    setMapTool('pan');
+                    e.preventDefault();
+                    break;
+                case 'v':
+                case 'V':
+                    setMapTool('select');
+                    e.preventDefault();
+                    break;
+                case 'm':
+                case 'M':
+                    setMapTool('edit');
+                    e.preventDefault();
+                    break;
+                case 'e':
+                case 'E':
+                    if (!manualActive) {
+                        emergencyStop();
+                        e.preventDefault();
+                    }
+                    break;
+                case ' ':
+                    if (!manualActive) {
+                        spaceKeyPressed = true;
+                        updateCursor();
+                        e.preventDefault();
+                    }
+                    break;
+                case '+':
+                case '=':
+                    zoomIn();
+                    e.preventDefault();
+                    break;
+                case '-':
+                case '_':
+                    zoomOut();
+                    e.preventDefault();
+                    break;
+                case 'r':
+                case 'R':
+                    if (!manualActive) {
+                        resetView();
+                        e.preventDefault();
+                    }
+                    break;
+                case 'f':
+                case 'F':
+                    if (!manualActive) {
+                        fitToScreen();
+                        e.preventDefault();
+                    }
+                    break;
+            }
+        });
     </script>
 </body>
 </html>

@@ -164,11 +164,12 @@ bt_navigator_rclcpp_node:
 controller_server:
   ros__parameters:
     use_sim_time: true
-    controller_frequency: 10.0
+    controller_frequency: 20.0  # Increased from 10.0 for faster emergency response
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.0
 >>>>>>> 51bf80f (web ui nav update)
     min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3  # Allow some deviation before considering failure
     progress_checker_plugin: "progress_checker"
     goal_checker_plugin: "goal_checker"
     controller_plugins: ["FollowPath"]
@@ -180,10 +181,14 @@ controller_server:
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.5
+<<<<<<< HEAD
       movement_time_allowance: 10.0
 <<<<<<< HEAD
     # Goal checker parameters
 =======
+=======
+      movement_time_allowance: 5.0  # Reduced from 10.0 to fail faster if stuck
+>>>>>>> 0d21549 (Guard autonomy when manual mode active and track control mode)
 
 >>>>>>> 51bf80f (web ui nav update)
     goal_checker:
@@ -241,7 +246,7 @@ controller_server:
       stateful: True
 =======
 
-      transform_tolerance: 0.2
+      transform_tolerance: 0.1  # Reduced from 0.2 for faster updates
       xy_goal_tolerance: 0.25
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: true
@@ -507,7 +512,7 @@ behavior_server:
     use_sim_time: true
     costmap_topic: "local_costmap/costmap_raw"
     footprint_topic: "local_costmap/published_footprint"
-    cycle_frequency: 10.0
+    cycle_frequency: 20.0  # Increased from 10.0 for faster response
 
     behavior_plugins: ["spin", "backup", "wait"]
 

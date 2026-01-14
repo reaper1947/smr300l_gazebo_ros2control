@@ -1,15 +1,19 @@
 twist_mux:
   ros__parameters:
     topics:
-      navigation:
-        topic   : cmd_vel
+      safety:
+        topic   : cmd_vel_safety
         timeout : 0.5
-        priority: 10
-      tracker:
-        topic   : cmd_vel_tracker
-        timeout : 0.5
-        priority: 20
+        priority: 100  # HIGHEST - safety always overrides everything
       joystick:
         topic   : cmd_vel_joy
         timeout : 0.5
-        priority: 100
+        priority: 90  # Manual control
+      tracker:
+        topic   : cmd_vel_tracker
+        timeout : 0.5
+        priority: 20  # Sequence following
+      navigation:
+        topic   : cmd_vel
+        timeout : 0.5
+        priority: 10  # Autonomous navigation

@@ -1,3 +1,4 @@
+
 export GAZEBO_MODEL_DATABASE_URI=""
 export GAZEBO_MODEL_PATH=$GAZEBO_MODEL_PATH:/home/aun/Downloads/aws-robomaker-small-warehouse-world-ros1/models
 ros2 launch my_bot launch_sim.launch.py use_sim_time:=true world:=/home/aun/Downloads/small_warehouse.world
@@ -21,4 +22,9 @@ ros2 launch nav2_bringup bringup_launch.py   use_sim_time:=true   map:=/home/aun
 
 colcon build --symlink-install --base-paths . src
 
+colcon build --symlink-install --base-paths src/zone_nav
+
 ros2 launch my_bot zone_nav_ui.launch.py
+
+
+colcon build --symlink-install --base-paths . src
