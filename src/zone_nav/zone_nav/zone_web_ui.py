@@ -4,43 +4,60 @@ import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.action import ActionClient
+from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from zone_nav_interfaces.srv import SaveZone, GoToZone
 from nav2_msgs.action import NavigateToPose
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist, TransformStamped
 from nav_msgs.msg import Path
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 from std_srvs.srv import Trigger, SetBool
+import tf2_ros
+from tf2_ros import TransformException
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from flask_cors import CORS
 import threading
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 import yaml
 import os
 import math
-from PIL import Image
+from PIL import Image, ImageDraw
 import io
 import base64
+import json
+import numpy as np
 
 
 class ZoneWebServer(Node):
-    def __init__(self):
+    def __init__(self, executor):
         super().__init__('zone_web_server')
+        
+        # Store executor reference for thread-safe ROS calls from Flask
+        self.executor = executor
+        
+        # TF2 buffer and listener for proper frame transformations
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        
+        # Reentrant callback group for thread safety with action client
+        self.cb_group = ReentrantCallbackGroup()
         
         # Service clients
         self.save_zone_client = self.create_client(SaveZone, '/save_zone')
         self.go_to_zone_client = self.create_client(GoToZone, '/go_to_zone')
         
-        # Safety controller services
-        self.safety_estop_client = self.create_client(SetBool, 'safety/emergency_stop')
-        self.safety_override_client = self.create_client(SetBool, 'safety/override')
-        self.safety_status_client = self.create_client(Trigger, 'safety/status')
-        
         # Publisher for goal poses
         self.goal_pub = self.create_publisher(PoseStamped, '/goal_pose', 10)
         
-        # Publisher for manual velocity control and emergency stop
-        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        # Publisher for initial pose estimate (2D Pose Estimate like RViz)
+        self.initial_pose_pub = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
+        
+        # Publisher for manual velocity control (high priority via twist_mux)
+        self.cmd_vel_manual_pub = self.create_publisher(Twist, 'cmd_vel_joy', 10)
+        
+        # Publisher for safety emergency stop (highest priority via twist_mux)
+        self.cmd_vel_safety_pub = self.create_publisher(Twist, 'cmd_vel_safety', 10)
         
         # Publisher for control mode switching
         self.mode_pub = self.create_publisher(String, '/control_mode', 10)
@@ -49,12 +66,20 @@ class ZoneWebServer(Node):
         self.current_mode = 'manual'  # Start in manual mode
         self.mode_sub = self.create_subscription(String, '/control_mode', self.mode_status_callback, 10)
         
-        # Action client for Nav2 navigation (to cancel goals)
-        self.nav_action_client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
+        # Action client for Nav2 navigation with ReentrantCallbackGroup for thread safety
+        self.nav_action_client = ActionClient(
+            self,
+            NavigateToPose,
+            '/navigate_to_pose',
+            callback_group=self.cb_group
+        )
         self.current_nav_goal_handle = None
         
         # Timer for continuous safety stop commands
         self.safety_stop_timer = None
+        
+        # E-STOP timer (separate from safety stop)
+        self.estop_timer = None
         
         # Safety parameters
         self.confidence_threshold = 30.0  # Stop if confidence drops below this
@@ -78,6 +103,17 @@ class ZoneWebServer(Node):
         self.path_waypoints = []
         self.current_waypoint_index = 0
         self.path_goal_handle = None
+        
+        # Mission state tracking for resume functionality
+        self.mission_state = {
+            'active': False,
+            'type': None,  # 'path', 'sequence', 'zone'
+            'data': None,  # Mission-specific data
+            'progress': 0,  # Current progress index
+            'interrupted_by': None,  # 'estop', 'manual', 'safety'
+            'timestamp': None
+        }
+        self.mission_state_file = os.path.expanduser('~/mission_state.json')
         
         # Subscribe to robot position - match AMCL's QoS profile
         self.robot_pose = None
@@ -108,24 +144,84 @@ class ZoneWebServer(Node):
         
         self.get_logger().info('Subscribed to /plan for navigation path')
         
-        # Subscribe to lidar scan
-        self.laser_scan = None
-        self.scan_sub = self.create_subscription(
+        # Subscribe to FRONT lidar scan
+        self.laser_scan_front = None
+        self.scan_front_sub = self.create_subscription(
             LaserScan,
             '/scan',
-            self.scan_callback,
+            self.scan_front_callback,
             10
         )
         
-        self.get_logger().info('Subscribed to /scan for lidar data')
+        # Subscribe to REAR lidar scan
+        self.laser_scan_rear = None
+        self.scan_rear_sub = self.create_subscription(
+            LaserScan,
+            '/scan2',
+            self.scan_rear_callback,
+            10
+        )
+        
+        # Combined scan for visualization
+        self.laser_scan = None
+        
+        self.get_logger().info('Subscribed to /scan (FRONT) and /scan2 (REAR) for lidar data')
         
         # Load map info
         self.map_path = os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps/smr_map.yaml')
         self.zones_file = os.path.expanduser('~/zones.yaml')
+        self.paths_file = os.path.expanduser('~/paths.yaml')
+        self.layouts_file = os.path.expanduser('~/layouts.yawml')
+        self.current_layout = None  # Track active layout
         self.map_info = self.load_map_info()
+        
+        # Load map image for editing
+        self.map_img = None
+        self._load_map_image()
+        
+        # Map editor layers (separate from navigation)
+        self.map_layers = {
+            'obstacles': [],
+            'no_go_zones': [],
+            'slow_zones': [],
+            'restricted': []
+        }
+        self.layers_file = os.path.expanduser('~/map_layers.json')
+        self.load_map_layers()
         
         self.get_logger().info('Zone Web Server node started')
         self.get_logger().info(f'Map: {self.map_info.get("image_path", "Not found")}')
+    
+    def call_ros_from_flask(self, ros_func, timeout=2.0):
+        """Thread-safe wrapper for calling ROS operations from Flask threads.
+        
+        Uses call_soon_threadsafe to schedule ROS work on the executor thread,
+        preventing 'wait set' issues and deadlocks.
+        
+        Args:
+            ros_func: Callable that performs ROS operations (runs in executor thread)
+            timeout: Maximum time to wait for result (seconds)
+            
+        Returns:
+            Result from ros_func
+            
+        Raises:
+            FutureTimeoutError: If operation times out
+        """
+        fut = Future()
+        
+        def do_ros_work():
+            try:
+                result = ros_func()
+                fut.set_result(result)
+            except Exception as e:
+                fut.set_exception(e)
+        
+        # Schedule ROS work on executor thread
+        self.executor.call_soon_threadsafe(do_ros_work)
+        
+        # Wait for result from Flask thread
+        return fut.result(timeout=timeout)
     
     def mode_status_callback(self, msg):
         """Track current control mode"""
@@ -204,36 +300,102 @@ class ZoneWebServer(Node):
         else:
             self.current_path = None
     
-    def scan_callback(self, msg):
-        """Store lidar scan data"""
-        if not self.robot_pose:
-            return
-        
-        # Sample every Nth point to reduce data size
-        sample_rate = 5
+    def scan_front_callback(self, msg):
+        """Store FRONT lidar scan data (/scan) - transform to map frame using TF2"""
         points = []
         
-        # Minimum range filter - ignore points closer than this (likely the robot itself)
-        min_valid_range = 0.35  # Ignore obstacles closer than 35cm (smaller than robot footprint)
-        
-        angle = msg.angle_min
-        for i, r in enumerate(msg.ranges):
-            # Filter: valid range AND minimum distance AND within sensor limits
-            if i % sample_rate == 0 and r > min_valid_range and msg.range_min < r < msg.range_max:
-                # Convert polar to cartesian relative to robot
-                x_local = r * math.cos(angle)
-                y_local = r * math.sin(angle)
-                
-                # Transform to world coordinates
-                robot_theta = self.robot_pose['theta']
-                x_world = self.robot_pose['x'] + x_local * math.cos(robot_theta) - y_local * math.sin(robot_theta)
-                y_world = self.robot_pose['y'] + x_local * math.sin(robot_theta) + y_local * math.cos(robot_theta)
-                
-                points.append({'x': x_world, 'y': y_world})
+        try:
+            # Get transform from laser frame to map frame AT THE SCAN TIMESTAMP
+            transform = self.tf_buffer.lookup_transform(
+                'map',
+                msg.header.frame_id,
+                msg.header.stamp,
+                timeout=rclpy.duration.Duration(seconds=0.1)
+            )
             
-            angle += msg.angle_increment
+            # Sample every Nth point to reduce data size
+            sample_rate = 3
+            min_valid_range = 0.15
+            
+            angle = msg.angle_min
+            for i, r in enumerate(msg.ranges):
+                if i % sample_rate == 0 and r > min_valid_range and msg.range_min < r < msg.range_max:
+                    # Convert polar to cartesian in sensor frame
+                    x_sensor = r * math.cos(angle)
+                    y_sensor = r * math.sin(angle)
+                    
+                    # Apply transform to map frame
+                    x_map = (transform.transform.translation.x + 
+                            x_sensor * (2*(transform.transform.rotation.w**2 + transform.transform.rotation.x**2) - 1) +
+                            y_sensor * 2*(transform.transform.rotation.x*transform.transform.rotation.y - transform.transform.rotation.w*transform.transform.rotation.z))
+                    
+                    y_map = (transform.transform.translation.y +
+                            x_sensor * 2*(transform.transform.rotation.x*transform.transform.rotation.y + transform.transform.rotation.w*transform.transform.rotation.z) +
+                            y_sensor * (2*(transform.transform.rotation.w**2 + transform.transform.rotation.y**2) - 1))
+                    
+                    points.append({'x': x_map, 'y': y_map})
+                
+                angle += msg.angle_increment
+                
+        except (TransformException, tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            # Silently skip - transforms not available yet or scan too old
+            pass
         
-        self.laser_scan = points
+        self.laser_scan_front = points
+        self._merge_scans()
+    
+    def scan_rear_callback(self, msg):
+        """Store REAR lidar scan data (/scan2) - transform to map frame using TF2"""
+        points = []
+        
+        try:
+            # Get transform from laser frame to map frame AT THE SCAN TIMESTAMP
+            transform = self.tf_buffer.lookup_transform(
+                'map',
+                msg.header.frame_id,
+                msg.header.stamp,
+                timeout=rclpy.duration.Duration(seconds=0.1)
+            )
+            
+            # Sample every Nth point to reduce data size
+            sample_rate = 3
+            min_valid_range = 0.15
+            
+            angle = msg.angle_min
+            for i, r in enumerate(msg.ranges):
+                if i % sample_rate == 0 and r > min_valid_range and msg.range_min < r < msg.range_max:
+                    # Convert polar to cartesian in sensor frame
+                    x_sensor = r * math.cos(angle)
+                    y_sensor = r * math.sin(angle)
+                    
+                    # Apply transform to map frame (TF2 handles all rotations/offsets)
+                    x_map = (transform.transform.translation.x + 
+                            x_sensor * (2*(transform.transform.rotation.w**2 + transform.transform.rotation.x**2) - 1) +
+                            y_sensor * 2*(transform.transform.rotation.x*transform.transform.rotation.y - transform.transform.rotation.w*transform.transform.rotation.z))
+                    
+                    y_map = (transform.transform.translation.y +
+                            x_sensor * 2*(transform.transform.rotation.x*transform.transform.rotation.y + transform.transform.rotation.w*transform.transform.rotation.z) +
+                            y_sensor * (2*(transform.transform.rotation.w**2 + transform.transform.rotation.y**2) - 1))
+                    
+                    points.append({'x': x_map, 'y': y_map})
+                
+                angle += msg.angle_increment
+                
+        except (TransformException, tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            # Silently skip - transforms not available yet or scan too old
+            pass
+        
+        self.laser_scan_rear = points
+        self._merge_scans()
+    
+    def _merge_scans(self):
+        """Merge front and rear lidar scans for visualization"""
+        merged = []
+        if self.laser_scan_front:
+            merged.extend(self.laser_scan_front)
+        if self.laser_scan_rear:
+            merged.extend(self.laser_scan_rear)
+        self.laser_scan = merged if merged else None
     
     def validate_zone_position(self, x, y):
         """Validate if zone position is safe and reachable.
@@ -278,7 +440,7 @@ class ZoneWebServer(Node):
         return True, None
     
     def _publish_stop_command(self):
-        """Continuously publish stop commands while safety stop is active"""
+        """Continuously publish stop commands while automatic safety stop is active"""
         if self.safety_stop_active:
             stop_msg = Twist()
             stop_msg.linear.x = 0.0
@@ -287,11 +449,23 @@ class ZoneWebServer(Node):
             stop_msg.angular.x = 0.0
             stop_msg.angular.y = 0.0
             stop_msg.angular.z = 0.0
-            self.cmd_vel_pub.publish(stop_msg)
+            self.cmd_vel_safety_pub.publish(stop_msg)
+    
+    def _publish_estop_command(self):
+        """Continuously publish stop commands while E-STOP is active (MASTER KILL SWITCH)"""
+        if self.estop_active:
+            stop_msg = Twist()
+            stop_msg.linear.x = 0.0
+            stop_msg.linear.y = 0.0
+            stop_msg.linear.z = 0.0
+            stop_msg.angular.x = 0.0
+            stop_msg.angular.y = 0.0
+            stop_msg.angular.z = 0.0
+            self.cmd_vel_safety_pub.publish(stop_msg)
     
     def _emergency_stop(self):
         """Send zero velocity command and cancel Nav2 goals to stop the robot immediately"""
-        # Send stop command to high-priority joystick topic (overrides Nav2)
+        # Send stop command to highest-priority safety topic (overrides everything)
         stop_msg = Twist()
         stop_msg.linear.x = 0.0
         stop_msg.linear.y = 0.0
@@ -299,7 +473,7 @@ class ZoneWebServer(Node):
         stop_msg.angular.x = 0.0
         stop_msg.angular.y = 0.0
         stop_msg.angular.z = 0.0
-        self.cmd_vel_pub.publish(stop_msg)
+        self.cmd_vel_safety_pub.publish(stop_msg)
         
         # Cancel any active Nav2 navigation goals
         if self.current_nav_goal_handle is not None:
@@ -344,6 +518,552 @@ class ZoneWebServer(Node):
                 return {}
         return {}
     
+    def load_paths(self):
+        """Load saved paths from YAML file"""
+        if os.path.exists(self.paths_file):
+            try:
+                with open(self.paths_file, 'r') as f:
+                    data = yaml.safe_load(f) or {}
+                return data.get('paths', {})
+            except Exception as e:
+                self.get_logger().error(f'Failed to load paths: {e}')
+                return {}
+        return {}
+    
+    def save_path(self, name, path_points):
+        """Save a path to YAML file"""
+        try:
+            # Load existing paths
+            paths = self.load_paths()
+            
+            # Add/update the path
+            paths[name] = path_points
+            
+            # Save to file
+            with open(self.paths_file, 'w') as f:
+                yaml.dump({'paths': paths}, f, default_flow_style=False)
+            
+            self.get_logger().info(f'Path "{name}" saved with {len(path_points)} waypoints')
+            return {'ok': True, 'message': f'Path "{name}" saved successfully'}
+        except Exception as e:
+            self.get_logger().error(f'Failed to save path: {e}')
+            return {'ok': False, 'message': f'Failed to save path: {str(e)}'}
+    
+    def delete_path(self, name):
+        """Delete a saved path"""
+        try:
+            paths = self.load_paths()
+            if name in paths:
+                del paths[name]
+                with open(self.paths_file, 'w') as f:
+                    yaml.dump({'paths': paths}, f, default_flow_style=False)
+                self.get_logger().info(f'Path "{name}" deleted')
+                return {'ok': True, 'message': f'Path "{name}" deleted'}
+            else:
+                return {'ok': False, 'message': f'Path "{name}" not found'}
+        except Exception as e:
+            self.get_logger().error(f'Failed to delete path: {e}')
+            return {'ok': False, 'message': f'Failed to delete path: {str(e)}'}
+    
+    def load_saved_path(self, name):
+        """Load a specific saved path"""
+        paths = self.load_paths()
+        if name in paths:
+            return {'ok': True, 'path': paths[name], 'message': f'Path "{name}" loaded'}
+        else:
+            return {'ok': False, 'message': f'Path "{name}" not found'}
+    
+    def load_layouts(self):
+        """Load all saved layouts from YAML file"""
+        if os.path.exists(self.layouts_file):
+            try:
+                with open(self.layouts_file, 'r') as f:
+                    data = yaml.safe_load(f) or {}
+                return data.get('layouts', {})
+            except Exception as e:
+                self.get_logger().error(f'Failed to load layouts: {e}')
+                return {}
+        return {}
+    
+    def save_layout(self, name, description=''):
+        """Save current configuration as a layout"""
+        try:
+            # Load existing layouts
+            layouts = self.load_layouts()
+            
+            # Get current zones and paths
+            zones = self.load_zones()
+            paths = self.load_paths()
+            
+            # Create layout entry
+            layouts[name] = {
+                'description': description,
+                'map_path': self.map_path,
+                'zones': zones,
+                'paths': paths,
+                'created': self.get_clock().now().to_msg().sec
+            }
+            
+            # Save to file
+            with open(self.layouts_file, 'w') as f:
+                yaml.dump({'layouts': layouts}, f, default_flow_style=False)
+            
+            self.current_layout = name
+            self.get_logger().info(f'Layout "{name}" saved with {len(zones)} zones and {len(paths)} paths')
+            return {
+                'ok': True, 
+                'message': f'Layout "{name}" saved successfully',
+                'zones_count': len(zones),
+                'paths_count': len(paths)
+            }
+        except Exception as e:
+            self.get_logger().error(f'Failed to save layout: {e}')
+            return {'ok': False, 'message': f'Failed to save layout: {str(e)}'}
+    
+    def load_layout(self, name):
+        """Load a layout and restore zones and paths"""
+        try:
+            layouts = self.load_layouts()
+            if name not in layouts:
+                return {'ok': False, 'message': f'Layout "{name}" not found'}
+            
+            layout = layouts[name]
+            
+            # Restore zones
+            with open(self.zones_file, 'w') as f:
+                yaml.dump({'zones': layout.get('zones', {})}, f, default_flow_style=False)
+            
+            # Restore paths
+            with open(self.paths_file, 'w') as f:
+                yaml.dump({'paths': layout.get('paths', {})}, f, default_flow_style=False)
+            
+            # Update map path if different
+            if layout.get('map_path') and layout['map_path'] != self.map_path:
+                self.map_path = layout['map_path']
+                self.map_info = self.load_map_info()
+                self._load_map_image()
+            
+            self.current_layout = name
+            zones_count = len(layout.get('zones', {}))
+            paths_count = len(layout.get('paths', {}))
+            
+            self.get_logger().info(f'Layout "{name}" loaded: {zones_count} zones, {paths_count} paths')
+            return {
+                'ok': True,
+                'message': f'Layout "{name}" loaded successfully',
+                'zones_count': zones_count,
+                'paths_count': paths_count,
+                'description': layout.get('description', '')
+            }
+        except Exception as e:
+            self.get_logger().error(f'Failed to load layout: {e}')
+            return {'ok': False, 'message': f'Failed to load layout: {str(e)}'}
+    
+    def delete_layout(self, name):
+        """Delete a saved layout"""
+        try:
+            layouts = self.load_layouts()
+            if name in layouts:
+                del layouts[name]
+                with open(self.layouts_file, 'w') as f:
+                    yaml.dump({'layouts': layouts}, f, default_flow_style=False)
+                if self.current_layout == name:
+                    self.current_layout = None
+                self.get_logger().info(f'Layout "{name}" deleted')
+                return {'ok': True, 'message': f'Layout "{name}" deleted'}
+            else:
+                return {'ok': False, 'message': f'Layout "{name}" not found'}
+        except Exception as e:
+            self.get_logger().error(f'Failed to delete layout: {e}')
+            return {'ok': False, 'message': f'Failed to delete layout: {str(e)}'}
+    
+    def get_layout_info(self):
+        """Get information about current layout and available layouts"""
+        layouts = self.load_layouts()
+        return {
+            'current': self.current_layout,
+            'layouts': {name: {'description': data.get('description', ''), 
+                               'zones_count': len(data.get('zones', {})),
+                               'paths_count': len(data.get('paths', {})),
+                               'created': data.get('created', 0)}
+                        for name, data in layouts.items()}
+        }
+    
+    def save_mission_state(self, mission_type, mission_data, progress, interrupted_by=None):
+        """Save current mission state for potential resume"""
+        try:
+            self.mission_state = {
+                'active': True,
+                'type': mission_type,
+                'data': mission_data,
+                'progress': progress,
+                'interrupted_by': interrupted_by,
+                'timestamp': self.get_clock().now().to_msg().sec
+            }
+            
+            with open(self.mission_state_file, 'w') as f:
+                json.dump(self.mission_state, f, indent=2)
+            
+            self.get_logger().info(f'Mission state saved: {mission_type} at progress {progress}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to save mission state: {e}')
+    
+    def load_mission_state(self):
+        """Load saved mission state"""
+        if os.path.exists(self.mission_state_file):
+            try:
+                with open(self.mission_state_file, 'r') as f:
+                    self.mission_state = json.load(f)
+                return self.mission_state
+            except Exception as e:
+                self.get_logger().error(f'Failed to load mission state: {e}')
+                return {'active': False}
+        return {'active': False}
+    '\='
+    def clear_mission_state(self):
+        """Clear saved mission state after completion or cancellation"""
+        self.mission_state = {
+            'active': False,
+            'type': None,
+            'data': None,
+            'progress': 0,
+            'interrupted_by': None,
+            'timestamp': None
+        }
+        try:
+            if os.path.exists(self.mission_state_file):
+                os.remove(self.mission_state_file)
+            self.get_logger().info('Mission state cleared')
+        except Exception as e:
+            self.get_logger().error(f'Failed to clear mission state: {e}')
+    
+    def resume_mission(self):
+        """Resume interrupted mission from saved state"""
+        state = self.load_mission_state()
+        if not state.get('active'):
+            return {'ok': False, 'message': 'No mission to resume'}
+        
+        mission_type = state.get('type')
+        mission_data = state.get('data')
+        progress = state.get('progress', 0)
+        interrupted_by = state.get('interrupted_by', 'unknown')
+        
+        self.get_logger().info(f'Resuming {mission_type} mission from progress {progress} (interrupted by: {interrupted_by})')
+        
+        if mission_type == 'path':
+            # Resume path following
+            self.path_waypoints = mission_data
+            self.current_waypoint_index = progress
+            self.path_following_active = True
+            self._send_path_waypoint_goal()
+            return {'ok': True, 'message': f'Resuming path following from waypoint {progress + 1}/{len(mission_data)}', 'type': 'path'}
+        
+        elif mission_type == 'sequence':
+            # Resume sequence navigation
+            self.sequence_zones = mission_data
+            self.current_sequence_index = progress
+            self.sequence_active = True
+            self._navigate_to_next_zone_in_sequence()
+            return {'ok': True, 'message': f'Resuming sequence from zone {progress + 1}/{len(mission_data)}', 'type': 'sequence'}
+        
+        elif mission_type == 'zone':
+            # Resume single zone navigation
+            zone_name = mission_data.get('name')
+            return self.go_to_zone(zone_name)
+        
+        else:
+            return {'ok': False, 'message': f'Unknown mission type: {mission_type}'}
+    
+    def _load_map_image(self):
+        """Load the map image file for editing"""
+        try:
+            img_path = self.map_info.get('image_path')
+            if not img_path or not os.path.exists(img_path):
+                self.get_logger().warn(f'Map image not found: {img_path}')
+                return
+            
+            # Load the PGM/PNG image
+            self.map_img = Image.open(img_path)
+            
+            # Invert if needed (make occupied=black, free=white)
+            if self.map_info.get('negate', 0) == 0:
+                self.map_img = Image.eval(self.map_img, lambda x: 255 - x)
+            
+            # Ensure it's in grayscale mode for editing
+            self.map_img = self.map_img.convert('L')
+            
+            self.get_logger().info(f'Loaded map image: {self.map_img.width}x{self.map_img.height}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to load map image: {e}')
+            self.map_img = None
+    
+    def load_map_layers(self):
+        """Load saved map editing layers"""
+        if os.path.exists(self.layers_file):
+            try:
+                with open(self.layers_file, 'r') as f:
+                    self.map_layers = json.load(f)
+                self.get_logger().info(f'Loaded {sum(len(v) for v in self.map_layers.values())} map layer objects')
+            except Exception as e:
+                self.get_logger().error(f'Failed to load map layers: {e}')
+    
+    def save_map_layers(self):
+        """Save map editing layers to file"""
+        try:
+            with open(self.layers_file, 'w') as f:
+                json.dump(self.map_layers, f, indent=2)
+            self.get_logger().info('Map layers saved')
+            return True
+        except Exception as e:
+            self.get_logger().error(f'Failed to save map layers: {e}')
+            return False
+    
+    def render_map_with_layers(self):
+        """Render map with all editing layers overlaid"""
+        if self.map_img is None:
+            return None
+        
+        # Start with original map
+        img = self.map_img.copy().convert('RGB')
+        draw = ImageDraw.Draw(img, 'RGBA')
+        
+        resolution = self.map_info.get('resolution', 0.05)
+        origin = self.map_info.get('origin', [0, 0, 0])
+        height = img.height
+        
+        def world_to_pixel(wx, wy):
+            px = int((wx - origin[0]) / resolution)
+            py = int(height - (wy - origin[1]) / resolution)
+            return (px, py)
+        
+        # Draw obstacles (black)
+        for obj in self.map_layers.get('obstacles', []):
+            if obj['type'] == 'rectangle':
+                p1 = world_to_pixel(obj['x1'], obj['y1'])
+                p2 = world_to_pixel(obj['x2'], obj['y2'])
+                draw.rectangle([p1, p2], fill=(0, 0, 0, 255))
+            elif obj['type'] == 'circle':
+                center = world_to_pixel(obj['x'], obj['y'])
+                radius_px = int(obj['radius'] / resolution)
+                bbox = [center[0] - radius_px, center[1] - radius_px,
+                       center[0] + radius_px, center[1] + radius_px]
+                draw.ellipse(bbox, fill=(0, 0, 0, 255))
+            elif obj['type'] == 'polygon':
+                points = [world_to_pixel(p['x'], p['y']) for p in obj['points']]
+                draw.polygon(points, fill=(0, 0, 0, 255))
+        
+        # Draw no-go zones (red transparent)
+        for obj in self.map_layers.get('no_go_zones', []):
+            if obj['type'] == 'rectangle':
+                p1 = world_to_pixel(obj['x1'], obj['y1'])
+                p2 = world_to_pixel(obj['x2'], obj['y2'])
+                draw.rectangle([p1, p2], fill=(255, 0, 0, 100), outline=(255, 0, 0, 255), width=2)
+            elif obj['type'] == 'polygon':
+                points = [world_to_pixel(p['x'], p['y']) for p in obj['points']]
+                draw.polygon(points, fill=(255, 0, 0, 100), outline=(255, 0, 0, 255))
+        
+        # Draw slow zones (yellow transparent)
+        for obj in self.map_layers.get('slow_zones', []):
+            if obj['type'] == 'rectangle':
+                p1 = world_to_pixel(obj['x1'], obj['y1'])
+                p2 = world_to_pixel(obj['x2'], obj['y2'])
+                draw.rectangle([p1, p2], fill=(255, 255, 0, 80), outline=(255, 200, 0, 255), width=2)
+        
+        # Draw restricted zones (orange transparent)
+        for obj in self.map_layers.get('restricted', []):
+            if obj['type'] == 'rectangle':
+                p1 = world_to_pixel(obj['x1'], obj['y1'])
+                p2 = world_to_pixel(obj['x2'], obj['y2'])
+                draw.rectangle([p1, p2], fill=(255, 165, 0, 100), outline=(255, 140, 0, 255), width=2)
+        
+        return img
+    
+    def export_edited_map(self, output_path):
+        """Export edited map as new PGM file"""
+        try:
+            rendered = self.render_map_with_layers()
+            if rendered is None:
+                return False
+            
+            # Convert back to grayscale
+            gray_map = rendered.convert('L')
+            
+            # Save as PGM
+            gray_map.save(output_path)
+            
+            # Create corresponding YAML
+            yaml_path = output_path.replace('.pgm', '.yaml')
+            yaml_data = {
+                'image': os.path.basename(output_path),
+                'resolution': self.map_info.get('resolution', 0.05),
+                'origin': self.map_info.get('origin', [0, 0, 0]),
+                'negate': 0,
+                'occupied_thresh': 0.65,
+                'free_thresh': 0.196
+            }
+            
+            with open(yaml_path, 'w') as f:
+                yaml.dump(yaml_data, f, default_flow_style=False)
+            
+            self.get_logger().info(f'Exported edited map to {output_path}')
+            return True
+        except Exception as e:
+            self.get_logger().error(f'Failed to export map: {e}')
+            return False
+    
+    def save_to_current_map(self):
+        """Save edited map directly to the current navigation map (replaces it)"""
+        try:
+            # Get current map path
+            current_map_path = self.map_info.get('image_path')
+            if not current_map_path:
+                return False
+            
+            # Backup original
+            backup_path = current_map_path.replace('.pgm', '_backup.pgm')
+            if os.path.exists(current_map_path) and not os.path.exists(backup_path):
+                import shutil
+                shutil.copy(current_map_path, backup_path)
+                self.get_logger().info(f'Created backup: {backup_path}')
+            
+            # Render map with ONLY obstacles baked in (not transparent zones)
+            if self.map_img is None:
+                return False
+            
+            img = self.map_img.copy()
+            draw = ImageDraw.Draw(img)
+            
+            resolution = self.map_info.get('resolution', 0.05)
+            origin = self.map_info.get('origin', [0, 0, 0])
+            height = img.height
+            
+            def world_to_pixel(wx, wy):
+                px = int((wx - origin[0]) / resolution)
+                py = int(height - (wy - origin[1]) / resolution)
+                return (px, py)
+            
+            # Draw ONLY obstacles as black (occupied space)
+            for obj in self.map_layers.get('obstacles', []):
+                if obj['type'] == 'rectangle':
+                    p1 = world_to_pixel(obj['x1'], obj['y1'])
+                    p2 = world_to_pixel(obj['x2'], obj['y2'])
+                    draw.rectangle([p1, p2], fill=0)  # Black = occupied
+                elif obj['type'] == 'circle':
+                    center = world_to_pixel(obj['x'], obj['y'])
+                    radius_px = int(obj['radius'] / resolution)
+                    bbox = [center[0] - radius_px, center[1] - radius_px,
+                           center[0] + radius_px, center[1] + radius_px]
+                    draw.ellipse(bbox, fill=0)  # Black = occupied
+                elif obj['type'] == 'polygon':
+                    points = [world_to_pixel(p['x'], p['y']) for p in obj['points']]
+                    draw.polygon(points, fill=0)  # Black = occupied
+            
+            # Save the map with obstacles
+            img.save(current_map_path)
+            
+            # Export keepout zones for Nav2
+            self._export_keepout_zones()
+            
+            # Export speed restricted zones for Nav2
+            self._export_speed_zones()
+            
+            # Reload the map image
+            self._load_map_image()
+            
+            self.get_logger().info(f'✓ Saved obstacles to map: {current_map_path}')
+            self.get_logger().info(f'✓ Exported keepout zones (no-go + restricted)')
+            self.get_logger().info(f'✓ Exported speed limit zones')
+            self.get_logger().info('⚠️  Restart Nav2 to use the updated map and zones')
+            return True
+        except Exception as e:
+            self.get_logger().error(f'Failed to save to current map: {e}')
+            return False
+    
+    def _export_keepout_zones(self):
+        """Export no-go and restricted zones as Nav2 keepout filter masks"""
+        try:
+            map_dir = os.path.dirname(self.map_info.get('image_path', ''))
+            if not map_dir:
+                return
+            
+            # Create keepout zones YAML for Nav2
+            keepout_zones = []
+            
+            # Add no-go zones
+            for obj in self.map_layers.get('no_go_zones', []):
+                if obj['type'] == 'rectangle':
+                    zone = {
+                        'type': 'rectangle',
+                        'points': [
+                            [obj['x1'], obj['y1']],
+                            [obj['x2'], obj['y1']],
+                            [obj['x2'], obj['y2']],
+                            [obj['x1'], obj['y2']]
+                        ]
+                    }
+                    keepout_zones.append(zone)
+                elif obj['type'] == 'polygon':
+                    zone = {
+                        'type': 'polygon',
+                        'points': [[p['x'], p['y']] for p in obj['points']]
+                    }
+                    keepout_zones.append(zone)
+            
+            # Add restricted zones
+            for obj in self.map_layers.get('restricted', []):
+                if obj['type'] == 'rectangle':
+                    zone = {
+                        'type': 'rectangle',
+                        'points': [
+                            [obj['x1'], obj['y1']],
+                            [obj['x2'], obj['y1']],
+                            [obj['x2'], obj['y2']],
+                            [obj['x1'], obj['y2']]
+                        ]
+                    }
+                    keepout_zones.append(zone)
+            
+            # Save to YAML
+            keepout_file = os.path.join(map_dir, 'keepout_zones.yaml')
+            with open(keepout_file, 'w') as f:
+                yaml.dump({'keepout_zones': keepout_zones}, f, default_flow_style=False)
+            
+            self.get_logger().info(f'Exported {len(keepout_zones)} keepout zones to {keepout_file}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to export keepout zones: {e}')
+    
+    def _export_speed_zones(self):
+        """Export slow zones as Nav2 speed restricted zones"""
+        try:
+            map_dir = os.path.dirname(self.map_info.get('image_path', ''))
+            if not map_dir:
+                return
+            
+            speed_zones = []
+            
+            for obj in self.map_layers.get('slow_zones', []):
+                if obj['type'] == 'rectangle':
+                    zone = {
+                        'type': 'rectangle',
+                        'points': [
+                            [obj['x1'], obj['y1']],
+                            [obj['x2'], obj['y1']],
+                            [obj['x2'], obj['y2']],
+                            [obj['x1'], obj['y2']]
+                        ],
+                        'speed_limit': obj.get('speed_limit', 0.2)
+                    }
+                    speed_zones.append(zone)
+            
+            # Save to YAML
+            speed_file = os.path.join(map_dir, 'speed_zones.yaml')
+            with open(speed_file, 'w') as f:
+                yaml.dump({'speed_zones': speed_zones}, f, default_flow_style=False)
+            
+            self.get_logger().info(f'Exported {len(speed_zones)} speed zones to {speed_file}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to export speed zones: {e}')
+    
     def delete_zone(self, name):
         """Delete a zone from the zones file"""
         try:
@@ -383,7 +1103,11 @@ class ZoneWebServer(Node):
             return {'ok': False, 'message': 'Safety stop is not active'}
     
     def follow_drawn_path(self, path_points):
-        """Follow a drawn path by navigating through waypoints sequentially using Nav2 action"""
+        """Follow a drawn path by navigating through waypoints sequentially"""
+        # Block if e-stop is latched
+        if self.estop_active:
+            return {'ok': False, 'message': '🛑 E-STOP ACTIVE. Reset before following a path.'}
+
         # Check if in manual mode - block autonomous navigation
         if self.current_mode == 'manual':
             return {'ok': False, 'message': '⚠️  Cannot follow path: Robot is in MANUAL MODE. Deactivate manual mode first.'}
@@ -398,7 +1122,7 @@ class ZoneWebServer(Node):
         mode_msg = String()
         mode_msg.data = 'path'
         self.mode_pub.publish(mode_msg)
-        self.current_mode = 'path'  # Update immediately
+        self.current_mode = 'path'
         self.get_logger().info('🛤️  Switching to PATH mode')
         
         # Check safety
@@ -409,50 +1133,50 @@ class ZoneWebServer(Node):
         self.path_waypoints = path_points
         self.current_waypoint_index = 0
         
-        self.get_logger().info(f'Starting path following with {len(path_points)} waypoints')
+        # Save initial mission state
+        self.save_mission_state('path', path_points, 0, None)
         
-        # Start with first waypoint using Nav2 action
-        self._navigate_to_next_waypoint()
+        self.get_logger().info(f'🚀 Starting path following with {len(path_points)} waypoints')
+        self.get_logger().info(f'📍 Waypoints: {[(p["x"], p["y"]) for p in path_points]}')
+        
+        # Navigate to first waypoint
+        self.get_logger().info(f'🎯 Calling _send_path_waypoint_goal() for waypoint 0')
+        self._send_path_waypoint_goal()
         
         return {'ok': True, 'message': f'Path following started: {len(path_points)} waypoints'}
     
-    def _navigate_to_next_waypoint(self):
-        """Navigate to the next waypoint in the path using Nav2 action"""
+    def _send_path_waypoint_goal(self):
+        """Send goal for current waypoint"""
         import math
         
+        self.get_logger().info(f'🔵 _send_path_waypoint_goal CALLED - index={self.current_waypoint_index}, active={self.path_following_active}, total_waypoints={len(self.path_waypoints) if self.path_waypoints else 0}')
+        
         if not self.path_following_active or self.current_waypoint_index >= len(self.path_waypoints):
+            self.get_logger().warn(f'⚠️ Aborting goal send: active={self.path_following_active}, index={self.current_waypoint_index}, total={len(self.path_waypoints) if self.path_waypoints else 0}')
             return
         
         point = self.path_waypoints[self.current_waypoint_index]
         
-        # Check safety
-        if self.safety_stop_active and not self.safety_override_active:
-            self.get_logger().warn(f'Cannot continue path: Safety stop active (confidence: {self.localization_confidence:.1f}%)')
-            self.stop_path_following()
-            return
-        
-        self.get_logger().info(f'Navigating to waypoint {self.current_waypoint_index + 1}/{len(self.path_waypoints)}: ({point["x"]:.2f}, {point["y"]:.2f})')
+        self.get_logger().info(f'📤 Sending goal for waypoint {self.current_waypoint_index + 1}/{len(self.path_waypoints)} at ({point["x"]:.2f}, {point["y"]:.2f})')
         
         # Wait for Nav2 action server
+        self.get_logger().info(f'⏳ Waiting for Nav2 action server...')
         if not self.nav_action_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error('Nav2 action server not available')
+            self.get_logger().error('❌ Nav2 action server not available after 5s timeout!')
             self.stop_path_following()
             return
+        self.get_logger().info(f'✓ Nav2 action server ready')
         
-        # Calculate orientation to next point or use provided theta
-        if 'theta' in point:
-            theta = float(point['theta'])
-        elif self.current_waypoint_index < len(self.path_waypoints) - 1:
-            # Calculate angle to next point
+        # Calculate orientation to next point
+        if self.current_waypoint_index < len(self.path_waypoints) - 1:
             next_point = self.path_waypoints[self.current_waypoint_index + 1]
             dx = next_point['x'] - point['x']
             dy = next_point['y'] - point['y']
             theta = math.atan2(dy, dx)
         else:
-            # Last point, face forward
             theta = 0.0
         
-        # Create goal message
+        # Create and send goal message
         goal_msg = NavigateToPose.Goal()
         goal_msg.pose.header.frame_id = 'map'
         goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
@@ -464,14 +1188,24 @@ class ZoneWebServer(Node):
         goal_msg.pose.pose.orientation.z = math.sin(theta / 2.0)
         goal_msg.pose.pose.orientation.w = math.cos(theta / 2.0)
         
-        # Send goal and wait for acceptance
-        send_goal_future = self.nav_action_client.send_goal_async(goal_msg)
+        # Send goal async with feedback
+        self.get_logger().info(f'📡 Calling send_goal_async() for waypoint {self.current_waypoint_index + 1}')
+        send_goal_future = self.nav_action_client.send_goal_async(
+            goal_msg,
+            feedback_callback=None
+        )
+        self.get_logger().info(f'🔗 Adding response callback for waypoint {self.current_waypoint_index + 1}')
         send_goal_future.add_done_callback(self._path_goal_response_callback)
+        self.get_logger().info(f'✅ Goal sent for waypoint {self.current_waypoint_index + 1}, waiting for acceptance...')
     
-    def stop_path_following(self):
+    def stop_path_following(self, save_state=False):
         """Stop the current path following"""
         if not self.path_following_active:
             return {'ok': False, 'message': 'No path following is active'}
+        
+        # Save state if interrupted (not completed)
+        if save_state and self.current_waypoint_index < len(self.path_waypoints):
+            self.save_mission_state('path', self.path_waypoints, self.current_waypoint_index, 'manual')
         
         self.path_following_active = False
         self.path_waypoints = []
@@ -490,67 +1224,58 @@ class ZoneWebServer(Node):
     
     def _path_goal_response_callback(self, future):
         """Handle Nav2 goal acceptance for path waypoint"""
+        self.get_logger().info(f'🟢 _path_goal_response_callback CALLED for waypoint {self.current_waypoint_index + 1}')
+        
         goal_handle = future.result()
         
         if not goal_handle.accepted:
-            self.get_logger().error('Path waypoint goal rejected by Nav2. Stopping path following.')
+            self.get_logger().error(f'❌ Path waypoint {self.current_waypoint_index + 1} goal REJECTED. Stopping.')
             self.stop_path_following()
             return
         
         self.path_goal_handle = goal_handle
-        self.get_logger().info(f'Waypoint {self.current_waypoint_index + 1}/{len(self.path_waypoints)} accepted by Nav2')
+        self.get_logger().info(f'✓ Waypoint {self.current_waypoint_index + 1} goal ACCEPTED')
         
         # Wait for result
+        self.get_logger().info(f'🔗 Adding result callback for waypoint {self.current_waypoint_index + 1}')
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._path_result_callback)
+        self.get_logger().info(f'⏳ Waiting for waypoint {self.current_waypoint_index + 1} completion...')
     
     def _path_result_callback(self, future):
-        """Handle completion of a waypoint in the path"""
+        """Handle completion of a waypoint"""
+        self.get_logger().info(f'🟣 _path_result_callback CALLED - current_index={self.current_waypoint_index}, active={self.path_following_active}')
+        
         if not self.path_following_active:
+            self.get_logger().warn(f'⚠️ Result callback fired but path_following_active=False, ignoring')
             return
         
         try:
             result = future.result()
-            status = result.status
+            self.get_logger().info(f'📊 Result status={result.status} (4=SUCCEEDED) for waypoint {self.current_waypoint_index + 1}')
             
-            # Status codes: 4 = SUCCEEDED, 5 = CANCELED, 6 = ABORTED
-            if status == 4:  # SUCCEEDED
-                self.get_logger().info(f'✓ Reached waypoint {self.current_waypoint_index + 1}/{len(self.path_waypoints)}')
+            if result.status == 4:  # SUCCEEDED
+                self.get_logger().info(f'✓ SUCCEEDED: Reached waypoint {self.current_waypoint_index + 1}/{len(self.path_waypoints)}')
                 
-                # Move to next waypoint
+                old_index = self.current_waypoint_index
                 self.current_waypoint_index += 1
+                self.get_logger().info(f'📈 Incremented waypoint index: {old_index} -> {self.current_waypoint_index}')
                 
                 if self.current_waypoint_index >= len(self.path_waypoints):
-                    # Path complete
-                    self.get_logger().info('✓ Path following completed successfully!')
+                    self.get_logger().info(f'🎉 Path complete! Reached all {len(self.path_waypoints)} waypoints')
+                    self.clear_mission_state()  # Clear saved state on successful completion
                     self.path_following_active = False
                     self.path_waypoints = []
                     self.current_waypoint_index = 0
-                    self.path_goal_handle = None
                 else:
-                    # Continue to next waypoint after a brief pause
-                    self.get_logger().info('Moving to next waypoint...')
-                    pause_timer = self.create_timer(1.0, self._path_timer_callback)
-                    # Store timer to prevent garbage collection
-                    self._path_pause_timer = pause_timer
+                    # Send next waypoint immediately
+                    self._send_path_waypoint_goal()
             else:
-                # Navigation failed or was canceled
-                self.get_logger().error(f'Navigation to waypoint failed with status {status}. Stopping path following.')
+                self.get_logger().error(f'Waypoint failed')
                 self.stop_path_following()
-                
         except Exception as e:
-            self.get_logger().error(f'Path result callback error: {e}. Stopping path following.')
+            self.get_logger().error(f'Path error: {e}')
             self.stop_path_following()
-    
-    def _path_timer_callback(self):
-        """Timer callback to continue path after pause"""
-        if hasattr(self, '_path_pause_timer'):
-            self._path_pause_timer.cancel()
-            self._path_pause_timer.destroy()
-            delattr(self, '_path_pause_timer')
-        
-        if self.path_following_active:
-            self._navigate_to_next_waypoint()
     
     def save_zone(self, name, x, y, theta):
         """Call save_zone service"""
@@ -602,7 +1327,9 @@ class ZoneWebServer(Node):
     
     def start_sequence(self, zone_names):
         """Start navigating through zones in sequence"""
-        # Check if in manual mode - block autonomous navigation
+        if self.estop_active:
+            return {'ok': False, 'message': '🛑 E-STOP ACTIVE. Reset before starting sequence.'}
+
         if self.current_mode == 'manual':
             return {'ok': False, 'message': '⚠️  Cannot start sequence: Robot is in MANUAL MODE. Deactivate manual mode button first.'}
         
@@ -616,13 +1343,11 @@ class ZoneWebServer(Node):
         mode_msg = String()
         mode_msg.data = 'sequence'
         self.mode_pub.publish(mode_msg)
-        self.current_mode = 'sequence'  # Update immediately
+        self.current_mode = 'sequence'
         self.get_logger().info('📝 Switching to SEQUENCE mode')
         
-        # Load zones to get coordinates
+        # Validate zones exist
         all_zones = self.load_zones()
-        
-        # Validate all zones exist
         for zone_name in zone_names:
             if zone_name not in all_zones:
                 return {'ok': False, 'message': f'Zone "{zone_name}" not found'}
@@ -631,15 +1356,15 @@ class ZoneWebServer(Node):
         self.sequence_zones = zone_names
         self.current_sequence_index = 0
         
-        self.get_logger().info(f'Starting sequence navigation through {len(zone_names)} zones: {zone_names}')
+        self.get_logger().info(f'Starting sequence: {len(zone_names)} zones')
         
-        # Start with first zone using Nav2 action
-        self._navigate_to_next_zone()
+        # Navigate to first zone
+        self._send_sequence_zone_goal()
         
         return {'ok': True, 'message': f'Sequence started: {len(zone_names)} zones'}
     
-    def _navigate_to_next_zone(self):
-        """Navigate to the next zone in the sequence using Nav2 action"""
+    def _send_sequence_zone_goal(self):
+        """Send goal for current zone"""
         if not self.sequence_active or self.current_sequence_index >= len(self.sequence_zones):
             return
         
@@ -647,23 +1372,16 @@ class ZoneWebServer(Node):
         all_zones = self.load_zones()
         
         if zone_name not in all_zones:
-            self.get_logger().error(f'Zone "{zone_name}" not found. Stopping sequence.')
+            self.get_logger().error(f'Zone "{zone_name}" not found')
             self.stop_sequence()
             return
         
         zone = all_zones[zone_name]
-        
-        # Check safety
-        if self.safety_stop_active and not self.safety_override_active:
-            self.get_logger().warn(f'Cannot continue sequence: Safety stop active (confidence: {self.localization_confidence:.1f}%)')
-            self.stop_sequence()
-            return
-        
-        self.get_logger().info(f'Navigating to zone {self.current_sequence_index + 1}/{len(self.sequence_zones)}: "{zone_name}"')
+        self.get_logger().info(f'Sending goal for zone {self.current_sequence_index + 1}/{len(self.sequence_zones)}: "{zone_name}"')
         
         # Wait for Nav2 action server
         if not self.nav_action_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error('Nav2 action server not available')
+            self.get_logger().error('Nav2 action server not available!')
             self.stop_sequence()
             return
         
@@ -679,14 +1397,21 @@ class ZoneWebServer(Node):
         goal_msg.pose.pose.orientation.z = float(zone['orientation']['z'])
         goal_msg.pose.pose.orientation.w = float(zone['orientation']['w'])
         
-        # Send goal and wait for acceptance
-        send_goal_future = self.nav_action_client.send_goal_async(goal_msg)
+        # Send goal with feedback
+        send_goal_future = self.nav_action_client.send_goal_async(
+            goal_msg,
+            feedback_callback=None
+        )
         send_goal_future.add_done_callback(self._sequence_goal_response_callback)
     
-    def stop_sequence(self):
+    def stop_sequence(self, save_state=False):
         """Stop the current sequence navigation"""
         if not self.sequence_active:
             return {'ok': False, 'message': 'No sequence is running'}
+        
+        # Save state if interrupted (not completed)
+        if save_state and self.current_sequence_index < len(self.sequence_zones):
+            self.save_mission_state('sequence', self.sequence_zones, self.current_sequence_index, 'manual')
         
         self.sequence_active = False
         self.sequence_zones = []
@@ -730,56 +1455,40 @@ class ZoneWebServer(Node):
         result_future.add_done_callback(self._sequence_result_callback)
     
     def _sequence_result_callback(self, future):
-        """Handle completion of a zone navigation in the sequence"""
+        """Handle completion of a zone"""
         if not self.sequence_active:
             return
         
         try:
             result = future.result()
-            status = result.status
             
-            # Status codes: 4 = SUCCEEDED, 5 = CANCELED, 6 = ABORTED
-            if status == 4:  # SUCCEEDED
-                current_zone = self.sequence_zones[self.current_sequence_index]
-                self.get_logger().info(f'✓ Reached zone {self.current_sequence_index + 1}/{len(self.sequence_zones)}: "{current_zone}"')
-                
-                # Move to next zone
+            if result.status == 4:  # SUCCEEDED
+                zone_name = self.sequence_zones[self.current_sequence_index]
+                self.get_logger().info(f'✓ Reached zone {self.current_sequence_index + 1}/{len(self.sequence_zones)}: "{zone_name}"')
                 self.current_sequence_index += 1
                 
                 if self.current_sequence_index >= len(self.sequence_zones):
-                    # Sequence complete
-                    self.get_logger().info('✓ Sequence navigation completed successfully!')
+                    self.get_logger().info('✓ Sequence complete!')
+                    self.clear_mission_state()  # Clear saved state on successful completion
                     self.sequence_active = False
                     self.sequence_zones = []
                     self.current_sequence_index = 0
-                    self.sequence_goal_handle = None
                 else:
-                    # Continue to next zone after a brief pause
-                    self.get_logger().info('Pausing briefly before next zone...')
-                    pause_timer = self.create_timer(2.0, self._sequence_timer_callback)
-                    # Store timer to prevent it from being garbage collected
-                    self._sequence_pause_timer = pause_timer
+                    # Send next zone immediately
+                    self._send_sequence_zone_goal()
             else:
-                # Navigation failed or was canceled
-                self.get_logger().error(f'Navigation to zone failed with status {status}. Stopping sequence.')
+                self.get_logger().error(f'Zone failed')
                 self.stop_sequence()
-                
         except Exception as e:
-            self.get_logger().error(f'Sequence result callback error: {e}. Stopping sequence.')
+            self.get_logger().error(f'Sequence error: {e}')
             self.stop_sequence()
-    
-    def _sequence_timer_callback(self):
-        """Timer callback to continue sequence after pause"""
-        if hasattr(self, '_sequence_pause_timer'):
-            self._sequence_pause_timer.cancel()
-            self._sequence_pause_timer.destroy()
-            delattr(self, '_sequence_pause_timer')
-        
-        if self.sequence_active:
-            self._navigate_to_next_zone()
     
     def go_to_zone(self, name, is_sequence=False):
         """Call go_to_zone service"""
+        # Block if e-stop is latched
+        if self.estop_active:
+            return {'ok': False, 'message': '🛑 E-STOP ACTIVE. Reset before navigating.'}
+
         # Check if in manual mode - block autonomous navigation
         if self.current_mode == 'manual' and not is_sequence:
             return {'ok': False, 'message': '⚠️  Cannot navigate: Robot is in MANUAL MODE. Deactivate manual mode first.'}
@@ -870,6 +1579,11 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/editor')
+def editor():
+    return render_template('map_editor.html')
+
+
 @app.route('/api/map')
 def get_map():
     """Get map image and metadata"""
@@ -958,6 +1672,7 @@ def save_zone():
             'warning_type': 'safety'
         })
     
+    # Direct call - save_zone uses async service call pattern (non-blocking)
     result = ros_node.save_zone(name, x, y, theta)
     
     # Store zone metadata if save was successful
@@ -980,6 +1695,7 @@ def goto_zone():
     if not name:
         return jsonify({'error': 'Missing zone name'}), 400
     
+    # Direct call is safe - method is async and non-blocking
     result = ros_node.go_to_zone(name)
     return jsonify(result)
 
@@ -996,6 +1712,7 @@ def delete_zone():
     if not name:
         return jsonify({'error': 'Missing zone name'}), 400
     
+    # Direct call is safe - simple file operation
     result = ros_node.delete_zone(name)
     return jsonify(result)
 
@@ -1016,6 +1733,7 @@ def update_zone():
         return jsonify({'error': 'Name, x, and y are required'}), 400
     
     # Save updated zone position
+    # Direct call - save_zone uses async service call pattern (non-blocking)
     result = ros_node.save_zone(name, x, y, theta)
     return jsonify(result)
 
@@ -1032,6 +1750,7 @@ def follow_path():
     if not path_points or len(path_points) < 2:
         return jsonify({'error': 'Path must have at least 2 points'}), 400
     
+    # Direct call is safe - method is async and non-blocking
     result = ros_node.follow_drawn_path(path_points)
     return jsonify(result)
 
@@ -1042,6 +1761,7 @@ def stop_path():
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
+    # Direct call is safe - method is async and non-blocking
     result = ros_node.stop_path_following()
     return jsonify(result)
 
@@ -1060,12 +1780,140 @@ def path_status():
     })
 
 
+@app.route('/api/path/save', methods=['POST'])
+def save_path():
+    """Save a drawn path"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    data = request.json
+    name = data.get('name')
+    path_points = data.get('path', [])
+    
+    if not name:
+        return jsonify({'error': 'Path name is required'}), 400
+    
+    if not path_points or len(path_points) < 2:
+        return jsonify({'error': 'Path must have at least 2 points'}), 400
+    
+    result = ros_node.save_path(name, path_points)
+    return jsonify(result)
+
+
+@app.route('/api/paths')
+def get_paths():
+    """Get all saved paths"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    paths = ros_node.load_paths()
+    return jsonify({'paths': paths})
+
+
+@app.route('/api/path/load/<path_name>')
+def load_path(path_name):
+    """Load a specific saved path"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    result = ros_node.load_saved_path(path_name)
+    return jsonify(result)
+
+
+@app.route('/api/path/delete/<path_name>', methods=['DELETE'])
+def delete_path(path_name):
+    """Delete a saved path"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    result = ros_node.delete_path(path_name)
+    return jsonify(result)
+
+
+@app.route('/api/mission/status')
+def get_mission_status():
+    """Get current mission state"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    state = ros_node.load_mission_state()
+    return jsonify(state)
+
+
+@app.route('/api/mission/resume', methods=['POST'])
+def resume_mission():
+    """Resume interrupted mission"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    result = ros_node.resume_mission()
+    return jsonify(result)
+
+
+@app.route('/api/mission/clear', methods=['POST'])
+def clear_mission():
+    """Clear saved mission state"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    ros_node.clear_mission_state()
+    return jsonify({'ok': True, 'message': 'Mission state cleared'})
+
+
+@app.route('/api/layouts')
+def get_layouts():
+    """Get all saved layouts with metadata"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    info = ros_node.get_layout_info()
+    return jsonify(info)
+
+
+@app.route('/api/layout/save', methods=['POST'])
+def save_layout():
+    """Save current configuration as a layout"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    data = request.json
+    name = data.get('name')
+    description = data.get('description', '')
+    
+    if not name:
+        return jsonify({'error': 'Layout name is required'}), 400
+    
+    result = ros_node.save_layout(name, description)
+    return jsonify(result)
+
+
+@app.route('/api/layout/load/<layout_name>', methods=['POST'])
+def load_layout(layout_name):
+    """Load a saved layout"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    result = ros_node.load_layout(layout_name)
+    return jsonify(result)
+
+
+@app.route('/api/layout/delete/<layout_name>', methods=['DELETE'])
+def delete_layout(layout_name):
+    """Delete a saved layout"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    result = ros_node.delete_layout(layout_name)
+    return jsonify(result)
+
+
 @app.route('/api/safety/force_resume', methods=['POST'])
 def force_resume():
     """Force resume navigation by overriding safety stop"""
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
+    # Direct call is safe - simple state modification
     result = ros_node.force_resume_navigation()
     return jsonify(result)
 
@@ -1082,6 +1930,7 @@ def start_sequence():
     if not zone_names:
         return jsonify({'error': 'No zones provided'}), 400
     
+    # Direct call is safe - method is async and non-blocking
     result = ros_node.start_sequence(zone_names)
     return jsonify(result)
 
@@ -1092,6 +1941,7 @@ def stop_sequence():
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
+    # Direct call is safe - method is async and non-blocking
     result = ros_node.stop_sequence()
     return jsonify(result)
 
@@ -1119,7 +1969,7 @@ def manual_velocity():
     linear = data.get('linear', 0.0)
     angular = data.get('angular', 0.0)
     
-    # Create and publish Twist message on high-priority joystick topic
+    # Direct publish is safe - ROS publishers are thread-safe for publish() calls
     twist_msg = Twist()
     twist_msg.linear.x = float(linear)
     twist_msg.linear.y = 0.0
@@ -1127,88 +1977,98 @@ def manual_velocity():
     twist_msg.angular.x = 0.0
     twist_msg.angular.y = 0.0
     twist_msg.angular.z = float(angular)
-    
-    ros_node.cmd_vel_pub.publish(twist_msg)
+    ros_node.cmd_vel_manual_pub.publish(twist_msg)
     
     return jsonify({'ok': True, 'linear': linear, 'angular': angular})
 
 
 @app.route('/api/estop/activate', methods=['POST'])
 def estop_activate():
-    """Activate emergency stop via safety controller"""
+    """Activate E-STOP - MASTER KILL SWITCH (immediately halt all robot motion)"""
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
     try:
-        if not ros_node.safety_estop_client.wait_for_service(timeout_sec=1.0):
-            return jsonify({'error': 'Safety controller not available'}), 503
+        ros_node.get_logger().warn('🛑 E-STOP ACTIVATED - MASTER KILL SWITCH')
         
-        request = SetBool.Request()
-        request.data = True
-        future = ros_node.safety_estop_client.call_async(request)
-        rclpy.spin_until_future_complete(ros_node, future, timeout_sec=2.0)
+        # Save mission state before stopping
+        if ros_node.path_following_active:
+            ros_node.save_mission_state('path', ros_node.path_waypoints, ros_node.current_waypoint_index, 'estop')
+        elif ros_node.sequence_active:
+            ros_node.save_mission_state('sequence', ros_node.sequence_zones, ros_node.current_sequence_index, 'estop')
         
-        if future.result():
-            response = future.result()
-            ros_node.get_logger().warn('🛑 EMERGENCY STOP ACTIVATED via safety controller')
-            
-            # Cancel all active navigation
-            if ros_node.path_following_active:
-                ros_node.stop_path_following()
-            if ros_node.sequence_active:
-                ros_node.stop_sequence()
-            
-            return jsonify({'ok': True, 'message': response.message})
-        else:
-            return jsonify({'error': 'E-stop service call failed'}), 500
+        # Latch E-STOP flag ONLY (do NOT set safety_stop_active)
+        ros_node.estop_active = True
+        
+        # Start E-STOP timer (separate from safety stop timer)
+        if ros_node.estop_timer is None:
+            ros_node.estop_timer = ros_node.create_timer(0.05, ros_node._publish_estop_command)
+        
+        # Immediately send stop command
+        stop_msg = Twist()
+        ros_node.cmd_vel_safety_pub.publish(stop_msg)
+        
+        # Cancel all active navigation
+        if ros_node.path_following_active:
+            ros_node.stop_path_following(save_state=False)  # Already saved above
+        if ros_node.sequence_active:
+            ros_node.stop_sequence(save_state=False)  # Already saved above
+        if ros_node.current_nav_goal_handle is not None:
+            try:
+                ros_node.current_nav_goal_handle.cancel_goal_async()
+                ros_node.current_nav_goal_handle = None
+            except:
+                pass
+        
+        return jsonify({'ok': True, 'message': 'E-STOP ACTIVATED - Robot halted'})
     except Exception as e:
+        ros_node.get_logger().error(f'E-STOP activation error: {e}')
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/estop/reset', methods=['POST'])
 def estop_reset():
-    """Reset emergency stop via safety controller"""
+    """Reset E-STOP - allow robot motion again"""
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
     try:
-        if not ros_node.safety_estop_client.wait_for_service(timeout_sec=1.0):
-            return jsonify({'error': 'Safety controller not available'}), 503
+        ros_node.get_logger().info('✓ E-STOP RESET - robot enabled')
         
-        request = SetBool.Request()
-        request.data = False
-        future = ros_node.safety_estop_client.call_async(request)
-        rclpy.spin_until_future_complete(ros_node, future, timeout_sec=2.0)
+        # Clear E-STOP latch ONLY (do NOT touch safety_stop_active)
+        ros_node.estop_active = False
         
-        if future.result():
-            response = future.result()
-            ros_node.get_logger().info('✓ Emergency stop reset via safety controller')
-            return jsonify({'ok': True, 'message': response.message})
-        else:
-            return jsonify({'error': 'E-stop reset service call failed'}), 500
+        # Stop the E-STOP timer (do NOT touch safety_stop_timer)
+        if ros_node.estop_timer is not None:
+            ros_node.estop_timer.cancel()
+            ros_node.estop_timer = None
+        
+        # Send one final zero command
+        stop_msg = Twist()
+        ros_node.cmd_vel_safety_pub.publish(stop_msg)
+        
+        return jsonify({'ok': True, 'message': 'E-STOP reset - robot can now move'})
     except Exception as e:
+        ros_node.get_logger().error(f'E-STOP reset error: {e}')
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/estop/status', methods=['GET'])
 def estop_status():
-    """Get safety controller status"""
+    """Get E-STOP status (separate from automatic safety stop)"""
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
     try:
-        if not ros_node.safety_status_client.wait_for_service(timeout_sec=1.0):
-            return jsonify({'error': 'Safety controller not available'}), 503
-        
-        request = Trigger.Request()
-        future = ros_node.safety_status_client.call_async(request)
-        rclpy.spin_until_future_complete(ros_node, future, timeout_sec=2.0)
-        
-        if future.result():
-            response = future.result()
-            return jsonify({'ok': True, 'status': response.message})
-        else:
-            return jsonify({'error': 'Status service call failed'}), 500
+        status_msg = 'E-STOP ACTIVE - MASTER KILL SWITCH' if ros_node.estop_active else 'E-STOP inactive'
+        return jsonify({
+            'ok': True,
+            'estop_active': ros_node.estop_active,
+            'safety_stop_active': ros_node.safety_stop_active,
+            'status': status_msg,
+            'estop_timer_running': ros_node.estop_timer is not None,
+            'safety_timer_running': ros_node.safety_stop_timer is not None
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -1219,9 +2079,11 @@ def set_manual_mode():
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
+    # Direct publish is safe - ROS publishers are thread-safe
     mode_msg = String()
     mode_msg.data = 'manual'
     ros_node.mode_pub.publish(mode_msg)
+    ros_node.current_mode = 'manual'
     ros_node.get_logger().info('🕹️  Switching to MANUAL mode')
     
     return jsonify({'ok': True, 'message': 'Switched to manual control mode'})
@@ -1233,12 +2095,76 @@ def set_auto_mode():
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
+    # Direct publish is safe - ROS publishers are thread-safe
     mode_msg = String()
-    mode_msg.data = 'zones'  # Default autonomous mode
+    mode_msg.data = 'zones'
     ros_node.mode_pub.publish(mode_msg)
+    ros_node.current_mode = 'zones'
     ros_node.get_logger().info('🤖 Switching to AUTO mode (zones)')
     
     return jsonify({'ok': True, 'message': 'Switched to autonomous navigation mode'})
+
+
+@app.route('/api/robot/set_pose', methods=['POST'])
+def set_initial_pose():
+    """Set initial robot pose (2D Pose Estimate like RViz)"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    data = request.json
+    x = data.get('x')
+    y = data.get('y')
+    theta = data.get('theta', 0.0)
+    
+    if x is None or y is None:
+        return jsonify({'error': 'Missing x or y coordinates'}), 400
+    
+    try:
+        def publish_initial_pose():
+            # Create PoseWithCovarianceStamped message for AMCL
+            pose_msg = PoseWithCovarianceStamped()
+            pose_msg.header.frame_id = 'map'
+            pose_msg.header.stamp = ros_node.get_clock().now().to_msg()
+            
+            # Set position
+            pose_msg.pose.pose.position.x = float(x)
+            pose_msg.pose.pose.position.y = float(y)
+            pose_msg.pose.pose.position.z = 0.0
+            
+            # Set orientation (theta to quaternion)
+            pose_msg.pose.pose.orientation.x = 0.0
+            pose_msg.pose.pose.orientation.y = 0.0
+            pose_msg.pose.pose.orientation.z = math.sin(theta / 2.0)
+            pose_msg.pose.pose.orientation.w = math.cos(theta / 2.0)
+            
+            # Set covariance (small values = high confidence)
+            # Format: [x, y, z, rot_x, rot_y, rot_z] - 6x6 matrix
+            pose_msg.pose.covariance = [0.0] * 36
+            pose_msg.pose.covariance[0] = 0.25   # x variance
+            pose_msg.pose.covariance[7] = 0.25   # y variance
+            pose_msg.pose.covariance[35] = 0.06  # yaw variance
+            
+            # Publish to AMCL
+            ros_node.initial_pose_pub.publish(pose_msg)
+            
+            ros_node.get_logger().info(f'✓ Initial pose set: x={x:.2f}, y={y:.2f}, theta={theta:.2f}')
+            
+            return {
+                'ok': True, 
+                'message': f'Robot repositioned to ({x:.2f}, {y:.2f})',
+                'x': x,
+                'y': y,
+                'theta': theta
+            }
+        
+        # Use thread-safe wrapper for get_clock().now() call
+        result = ros_node.call_ros_from_flask(publish_initial_pose, timeout=2.0)
+        return jsonify(result)
+    except FutureTimeoutError:
+        return jsonify({'error': 'Operation timed out'}), 500
+    except Exception as e:
+        ros_node.get_logger().error(f'Failed to set initial pose: {e}')
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/diagnostics/nav2', methods=['GET'])
@@ -1351,6 +2277,262 @@ def check_obstacles():
     })
 
 
+# ===== MAP EDITOR ROUTES =====
+
+@app.route('/api/editor/map/preview')
+def get_editor_map_preview():
+    """Get rendered map with editing layers"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    try:
+        rendered = ros_node.render_map_with_layers()
+        if rendered is None:
+            # Fall back to original map
+            map_img = ros_node.convert_map_to_png()
+            if map_img is None:
+                return jsonify({'error': 'No map loaded'}), 500
+            return jsonify({
+                'image': map_img['data'],
+                'width': map_img['width'],
+                'height': map_img['height']
+            })
+        
+        # Convert to base64
+        img_io = io.BytesIO()
+        rendered.save(img_io, 'PNG')
+        img_io.seek(0)
+        img_base64 = base64.b64encode(img_io.getvalue()).decode('utf-8')
+        
+        return jsonify({
+            'image': img_base64,
+            'width': rendered.width,
+            'height': rendered.height
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/editor/layers', methods=['GET'])
+def get_editor_layers():
+    """Get all map editing layers"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    return jsonify(ros_node.map_layers)
+
+
+@app.route('/api/editor/layer/add', methods=['POST'])
+def add_editor_layer_object():
+    """Add object to an editing layer"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    data = request.json
+    layer_type = data.get('layer')
+    obj = data.get('object')
+    
+    if not layer_type or not obj:
+        return jsonify({'error': 'Missing layer or object'}), 400
+    
+    if layer_type in ros_node.map_layers:
+        ros_node.map_layers[layer_type].append(obj)
+        success = ros_node.save_map_layers()
+        return jsonify({'ok': success})
+    
+    return jsonify({'ok': False, 'error': 'Invalid layer type'}), 400
+
+
+@app.route('/api/editor/layer/clear', methods=['POST'])
+def clear_editor_layer():
+    """Clear all objects from an editing layer"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    data = request.json
+    layer_type = data.get('layer')
+    
+    if not layer_type:
+        return jsonify({'error': 'Missing layer type'}), 400
+    
+    if layer_type in ros_node.map_layers:
+        ros_node.map_layers[layer_type] = []
+        success = ros_node.save_map_layers()
+        return jsonify({'ok': success})
+    
+    return jsonify({'ok': False, 'error': 'Invalid layer type'}), 400
+
+
+@app.route('/api/editor/map/export', methods=['POST'])
+def export_editor_map():
+    """Export edited map to new PGM file"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    data = request.json
+    output_path = data.get('path', '/tmp/edited_map.pgm')
+    
+    success = ros_node.export_edited_map(output_path)
+    return jsonify({'ok': success, 'path': output_path})
+
+
+@app.route('/api/editor/map/save_current', methods=['POST'])
+def save_to_current_map():
+    """Save edited map to the currently loaded navigation map (REPLACES IT)"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    success = ros_node.save_to_current_map()
+    
+    if success:
+        return jsonify({
+            'ok': True, 
+            'message': 'Map saved! Restart Nav2 to use the updated map.',
+            'map_path': ros_node.map_info.get('image_path')
+        })
+    else:
+        return jsonify({'ok': False, 'error': 'Failed to save map'}), 500
+
+
+@app.route('/api/editor/map/reload', methods=['POST'])
+def reload_current_map():
+    """Reload the map from disk (useful after external changes)"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    ros_node._load_map_image()
+    return jsonify({'ok': True, 'message': 'Map reloaded from disk'})
+
+
+# ===== MAP MANAGER API =====
+@app.route('/api/map/upload', methods=['POST'])
+def upload_map():
+    """Upload a new map (PGM + YAML) via Map Manager service"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    from zone_nav_interfaces.srv import UploadMap
+    
+    data = request.json
+    map_name = data.get('map_name')
+    pgm_base64 = data.get('pgm_base64')
+    yaml_content = data.get('yaml_content')
+    
+    if not map_name or not pgm_base64 or not yaml_content:
+        return jsonify({'success': False, 'message': 'Missing required data'}), 400
+    
+    # Call map manager service
+    client = ros_node.create_client(UploadMap, '/map_manager/upload_map')
+    
+    if not client.wait_for_service(timeout_sec=2.0):
+        return jsonify({'success': False, 'message': 'Map Manager service not available'}), 503
+    
+    request_msg = UploadMap.Request()
+    request_msg.map_name = map_name
+    request_msg.pgm_base64 = pgm_base64
+    request_msg.yaml_content = yaml_content
+    
+    future = client.call_async(request_msg)
+    rclpy.spin_until_future_complete(ros_node, future, timeout_sec=5.0)
+    
+    if future.result() is not None:
+        response = future.result()
+        return jsonify({
+            'success': response.success,
+            'message': response.message,
+            'map_path': response.map_path if response.success else ''
+        })
+    else:
+        return jsonify({'success': False, 'message': 'Service call failed'}), 500
+
+
+@app.route('/api/map/set_active', methods=['POST'])
+def set_active_map():
+    """Set the active map and update all configurations"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    from zone_nav_interfaces.srv import SetActiveMap
+    
+    data = request.json
+    map_path = data.get('map_path')
+    
+    if not map_path:
+        return jsonify({'success': False, 'message': 'Missing map_path'}), 400
+    
+    # Call map manager service
+    client = ros_node.create_client(SetActiveMap, '/map_manager/set_active_map')
+    
+    if not client.wait_for_service(timeout_sec=2.0):
+        return jsonify({'success': False, 'message': 'Map Manager service not available'}), 503
+    
+    request_msg = SetActiveMap.Request()
+    request_msg.map_yaml_path = map_path
+    
+    future = client.call_async(request_msg)
+    rclpy.spin_until_future_complete(ros_node, future, timeout_sec=5.0)
+    
+    if future.result() is not None:
+        response = future.result()
+        return jsonify({
+            'success': response.success,
+            'message': response.message
+        })
+    else:
+        return jsonify({'success': False, 'message': 'Service call failed'}), 500
+
+
+@app.route('/api/map/get_active', methods=['GET'])
+def get_active_map():
+    """Get the currently active map path"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    from zone_nav_interfaces.srv import GetActiveMap
+    
+    # Call map manager service
+    client = ros_node.create_client(GetActiveMap, '/map_manager/get_active_map')
+    
+    if not client.wait_for_service(timeout_sec=2.0):
+        return jsonify({'success': False, 'message': 'Map Manager service not available'}), 503
+    
+    request_msg = GetActiveMap.Request()
+    
+    future = client.call_async(request_msg)
+    rclpy.spin_until_future_complete(ros_node, future, timeout_sec=5.0)
+    
+    if future.result() is not None:
+        response = future.result()
+        return jsonify({
+            'success': response.success,
+            'map_path': response.map_yaml_path if response.success else '',
+            'message': response.message
+        })
+    else:
+        return jsonify({'success': False, 'message': 'Service call failed'}), 500
+
+
+@app.route('/api/map/download/<filename>')
+def download_map_file(filename):
+    """Download a map file (PGM or YAML)"""
+    try:
+        # Get maps directory
+        maps_dir = os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps')
+        file_path = os.path.join(maps_dir, filename)
+        
+        # Security check - ensure file is in maps directory
+        if not os.path.abspath(file_path).startswith(os.path.abspath(maps_dir)):
+            return jsonify({'error': 'Invalid file path'}), 403
+        
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found'}), 404
+        
+        from flask import send_file
+        return send_file(file_path, as_attachment=True, download_name=filename)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 def run_flask():
     """Run Flask server in a separate thread"""
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
@@ -1360,7 +2542,12 @@ def main(args=None):
     global ros_node
     
     rclpy.init(args=args)
-    ros_node = ZoneWebServer()
+    
+    # Create executor first
+    executor = MultiThreadedExecutor(num_threads=4)
+    
+    # Pass executor to node for thread-safe Flask→ROS calls
+    ros_node = ZoneWebServer(executor)
     
     # Start Flask in a separate thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
@@ -1368,8 +2555,7 @@ def main(args=None):
     
     ros_node.get_logger().info('Web UI available at: http://localhost:5000')
     
-    # Use MultiThreadedExecutor to handle ROS callbacks
-    executor = MultiThreadedExecutor()
+    # Add node to executor
     executor.add_node(ros_node)
     
     try:

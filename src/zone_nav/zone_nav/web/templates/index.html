@@ -1,10 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zone Navigation UI</title>
+    <title>Warehouse Robot Control Center</title>
     <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --bg-elevated: #2d333b;
+            --border-primary: #30363d;
+            --border-secondary: #444c56;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-tertiary: #6e7681;
+            --accent-blue: #2ea043;
+            --accent-blue-hover: #3fb950;
+            --accent-red: #f85149;
+            --accent-yellow: #d29922;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+            --shadow-md: 0 3px 8px rgba(0, 0, 0, 0.6);
+            --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.7);
+        }
+        
         * {
             margin: 0;
             padding: 0;
@@ -12,33 +32,158 @@
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #1a1a1a;
-            color: #fff; 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             overflow: hidden;
+            font-size: 14px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        /* Tab Navigation */
+        .tab-navigation {
+            background: var(--bg-secondary);
+            display: flex;
+            padding: 0;
+            box-shadow: var(--shadow-md);
+            border-bottom: 1px solid var(--border-primary);
+        }
+        
+        .tab-button {
+            flex: 1;
+            padding: 14px 24px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-bottom: 2px solid transparent;
+            position: relative;
+        }
+        
+        .tab-button:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        
+        .tab-button.active {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-bottom-color: var(--accent-blue);
+        }
+        
+        /* Tab Content */
+        .tab-content {
+            display: none;
+            height: calc(100vh - 55px);
+        }
+        
+        .tab-content.active {
+            display: block;
         }
         
         #container {
             display: flex;
-            height: 100vh;
+            height: 100%;
         }
         
         #sidebar {
-            width: 360px;
-            background: linear-gradient(180deg, #1a1a1a 0%, #2a2a2a 100%);
-            padding: 0;
+            width: 340px;
+            background: var(--bg-secondary);
             overflow-y: auto;
-            border-right: 3px solid #333;
-            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.5);
+            border-right: 1px solid var(--border-primary);
+            display: flex;
+            flex-direction: column;
         }
         
         .sidebar-header {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            background: var(--bg-tertiary);
             padding: 20px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-            position: sticky;
+            box-shadow: var(--shadow-sm);
+            border-bottom: 1px solid var(--border-primary);
+        }
+        
+        .estop-toggle {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--accent-red);
+            border-radius: 8px;
+            margin-bottom: 16px;
+            box-shadow: 0 0 12px rgba(248, 81, 73, 0.2);
+        }
+
+        .estop-label {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.2;
+        }
+
+        .estop-label .estop-title {
+            font-weight: 600;
+            color: var(--accent-red);
+            letter-spacing: 0.3px;
+            font-size: 13px;
+        }
+
+        .estop-label .estop-state {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .estop-label .estop-state.active {
+            color: var(--accent-yellow);
+            font-weight: 600;
+        }
+
+        /* Toggle switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 64px;
+            height: 34px;
+        }
+
+        .switch input { display: none; }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
             top: 0;
-            z-index: 1000;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--accent-red);
+            transition: .2s;
+            border-radius: 34px;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .2s;
+            border-radius: 50%;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        input:checked + .slider {
+            background: var(--accent-blue);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(30px);
         }
         
         .sidebar-content {
@@ -46,95 +191,97 @@
         }
         
         .card {
-            background: #2a2a2a;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
-            border: 1px solid #444;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border-primary);
+            box-shadow: var(--shadow-sm);
         }
         
         .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
         }
         
         .card-title {
-            font-size: 16px;
-            font-weight: bold;
-            color: #4CAF50;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
             margin: 0;
         }
         
         #map-container {
             flex: 1;
             position: relative;
-            background: #222;
+            background: var(--bg-primary);
             overflow: hidden;
         }
         
         h1 {
-            font-size: 24px;
+            font-size: 18px;
             margin: 0;
-            color: white;
+            color: var(--text-primary);
             font-weight: 600;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
         
         .estop-btn {
             width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #f44336 0%, #c62828 100%);
+            padding: 12px;
+            background: var(--accent-red);
             color: white;
-            border: 3px solid #fff;
-            border-radius: 8px;
-            font-size: 18px;
-            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s ease;
             text-transform: uppercase;
-            letter-spacing: 2px;
-            box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4);
+            letter-spacing: 0.5px;
+            box-shadow: var(--shadow-sm);
             margin-bottom: 10px;
         }
         
         .manual-mode-btn {
             width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
-            color: white;
-            border: 3px solid #fff;
-            border-radius: 8px;
-            font-size: 18px;
-            font-weight: bold;
+            padding: 12px;
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            border: 1px solid var(--border-secondary);
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s ease;
             text-transform: uppercase;
-            letter-spacing: 2px;
-            box-shadow: 0 4px 15px rgba(33, 150, 243, 0.4);
+            letter-spacing: 0.5px;
+            box-shadow: var(--shadow-sm);
             margin-bottom: 10px;
         }
         
         .manual-mode-btn.active {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.6);
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 16px rgba(46, 160, 67, 0.4);
             animation: pulse 2s infinite;
         }
         
         @keyframes pulse {
-            0%, 100% { box-shadow: 0 4px 15px rgba(76, 175, 80, 0.6); }
-            50% { box-shadow: 0 4px 25px rgba(76, 175, 80, 0.9); }
+            0%, 100% { box-shadow: 0 0 16px rgba(46, 160, 67, 0.4); }
+            50% { box-shadow: 0 0 24px rgba(46, 160, 67, 0.6); }
         }
         
         .manual-mode-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(33, 150, 243, 0.6);
+            background: var(--bg-elevated);
+            border-color: var(--border-secondary);
+            transform: translateY(-1px);
         }
         
         .manual-mode-btn.active:hover {
-            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.8);
+            background: var(--accent-blue-hover);
+            border-color: var(--accent-blue-hover);
         }
         
         .manual-mode-btn:active {
@@ -142,56 +289,56 @@
         }
         
         .estop-btn:hover {
-            background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(244, 67, 54, 0.6);
+            background: #e04843;
+            transform: translateY(-1px);
         }
         
         .estop-btn:active {
-            transform: scale(0.95);
+            transform: translateY(0);
         }
         
         .zone-type-selector {
             display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
+            gap: 8px;
+            margin-bottom: 12px;
         }
         
         .zone-type-btn {
             flex: 1;
-            padding: 10px;
-            background: #333;
-            border: 2px solid #555;
+            padding: 8px 12px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-secondary);
             border-radius: 6px;
-            color: white;
+            color: var(--text-secondary);
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s ease;
             font-size: 12px;
-            font-weight: bold;
+            font-weight: 500;
         }
         
         .zone-type-btn.active {
-            border-color: #4CAF50;
-            background: rgba(76, 175, 80, 0.2);
-            color: #4CAF50;
+            border-color: var(--accent-blue);
+            background: rgba(46, 160, 67, 0.15);
+            color: var(--accent-blue);
         }
         
         .zone-type-btn.no-go.active {
-            border-color: #f44336;
-            background: rgba(244, 67, 54, 0.2);
-            color: #f44336;
+            border-color: var(--accent-red);
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--accent-red);
         }
         
         .zone-type-btn.speed.active {
-            border-color: #FFC107;
-            background: rgba(255, 193, 7, 0.2);
-            color: #FFC107;
+            border-color: var(--accent-yellow);
+            background: rgba(210, 153, 34, 0.15);
+            color: var(--accent-yellow);
         }
         
         h2 {
-            font-size: 18px;
-            margin: 20px 0 10px 0;
-            color: #2196F3;
+            font-size: 14px;
+            margin: 16px 0 8px 0;
+            color: var(--text-primary);
+            font-weight: 600;
         }
         
         #canvas {
@@ -205,29 +352,32 @@
         }
         
         .zone-item {
-            background: #333;
-            padding: 12px;
-            margin-bottom: 8px;
-            border-radius: 4px;
+            background: var(--bg-elevated);
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            border-radius: 6px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            transition: background 0.2s;
+            transition: all 0.15s ease;
+            border: 1px solid var(--border-primary);
         }
         
         .zone-item:hover {
-            background: #3a3a3a;
+            background: var(--bg-tertiary);
+            border-color: var(--border-secondary);
         }
         
         .zone-name {
-            font-weight: bold;
-            color: #4CAF50;
+            font-weight: 600;
+            color: var(--accent-blue);
+            font-size: 13px;
         }
         
         .zone-coords {
-            font-size: 12px;
-            color: #999;
-            margin-top: 4px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 2px;
         }
         
         .zone-actions {
@@ -236,27 +386,28 @@
         }
         
         button {
-            padding: 8px 16px;
+            padding: 7px 14px;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
-            font-weight: bold;
-            transition: all 0.2s;
+            font-weight: 500;
+            transition: all 0.15s ease;
+            font-size: 12px;
         }
         
         .btn-go {
-            background: #4CAF50;
+            background: var(--accent-blue);
             color: white;
         }
         
         .btn-go:hover {
-            background: #45a049;
+            background: var(--accent-blue-hover);
         }
         
         .btn-delete {
-            background: #f44336;
+            background: var(--accent-red);
             color: white;
-            padding: 8px 12px;
+            padding: 7px 12px;
         }
         
         .btn-delete:hover {
@@ -264,10 +415,10 @@
         }
         
         .controls {
-            background: #333;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            margin-bottom: 0;
         }
         
         .input-group {
@@ -277,92 +428,124 @@
         label {
             display: block;
             margin-bottom: 5px;
-            color: #aaa;
-            font-size: 14px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 500;
         }
         
         input[type="text"],
         input[type="number"] {
             width: 100%;
-            padding: 8px;
-            border: 1px solid #555;
-            border-radius: 4px;
-            background: #222;
-            color: #fff;
-            font-size: 14px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-primary);
+            border-radius: 6px;
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            font-size: 13px;
+            transition: all 0.15s ease;
+        }
+        
+        input[type="text"]:focus,
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(46, 160, 67, 0.1);
         }
         
         .btn-save {
             width: 100%;
-            background: #2196F3;
+            background: var(--accent-blue);
             color: white;
-            padding: 12px;
+            padding: 10px;
             margin-top: 10px;
+            font-weight: 600;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            font-size: 14px;
         }
         
         .btn-save:hover {
-            background: #0b7dda;
+            background: var(--accent-blue-hover);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+        
+        .btn-save:active {
+            transform: translateY(0);
         }
         
         .tool-btn {
             flex: 1;
             min-width: 60px;
-            padding: 12px 8px;
-            background: #333;
-            border: 2px solid #555;
+            padding: 10px 8px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-secondary);
             border-radius: 6px;
-            color: white;
+            color: var(--text-primary);
             cursor: pointer;
-            transition: all 0.2s;
-            font-size: 18px;
+            transition: all 0.15s ease;
+            font-size: 16px;
             text-align: center;
+            font-weight: 500;
         }
         
         .tool-btn:hover {
-            background: #444;
-            border-color: #666;
-            transform: translateY(-2px);
+            background: var(--bg-tertiary);
+            border-color: var(--border-secondary);
+            transform: translateY(-1px);
         }
         
         .tool-btn.active {
-            background: rgba(76, 175, 80, 0.2);
-            border-color: #4CAF50;
-            color: #4CAF50;
-            box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
+            background: rgba(46, 160, 67, 0.15);
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+            box-shadow: 0 0 8px rgba(46, 160, 67, 0.3);
         }
         
         .status {
-            padding: 10px;
-            border-radius: 4px;
+            padding: 10px 12px;
+            border-radius: 6px;
             margin-top: 10px;
-            font-size: 14px;
+            font-size: 13px;
+            font-weight: 500;
         }
         
         .status.success {
-            background: #4CAF50;
+            background: rgba(46, 160, 67, 0.15);
+            color: var(--accent-blue);
+            border: 1px solid var(--accent-blue);
         }
         
         .status.error {
-            background: #f44336;
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--accent-red);
+            border: 1px solid var(--accent-red);
         }
         
         .status.info {
-            background: #2196F3;
+            background: rgba(88, 166, 255, 0.15);
+            color: #58a6ff;
+            border: 1px solid #58a6ff;
         }
         
         .instructions {
-            background: #333;
-            padding: 15px;
-            border-radius: 4px;
-            margin-top: 20px;
-            font-size: 13px;
+            background: var(--bg-elevated);
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 16px;
+            font-size: 12px;
             line-height: 1.6;
-            color: #ccc;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-primary);
         }
         
         .instructions h3 {
-            color: #4CAF50;
-            margin-bottom: 10px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 600;
         }
         
         /* Map Toolbar */
@@ -372,20 +555,20 @@
             left: 50%;
             transform: translateX(-50%);
             display: flex;
-            gap: 10px;
-            background: rgba(42, 42, 42, 0.95);
-            padding: 10px 15px;
+            gap: 8px;
+            background: var(--bg-secondary);
+            padding: 8px 12px;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            box-shadow: var(--shadow-lg);
             z-index: 100;
-            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-primary);
         }
         
         .toolbar-group {
             display: flex;
-            gap: 5px;
-            padding: 0 10px;
-            border-right: 1px solid #555;
+            gap: 4px;
+            padding: 0 8px;
+            border-right: 1px solid var(--border-primary);
         }
         
         .toolbar-group:last-child {
@@ -393,31 +576,32 @@
         }
         
         .tool-btn {
-            width: 40px;
-            height: 40px;
-            background: #2a2a2a;
-            color: white;
-            border: 2px solid #555;
+            width: 38px;
+            height: 38px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-secondary);
             border-radius: 6px;
-            font-size: 18px;
+            font-size: 16px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s ease;
             position: relative;
         }
         
         .tool-btn:hover {
-            background: #3a3a3a;
-            border-color: #4CAF50;
-            transform: translateY(-2px);
+            background: var(--bg-elevated);
+            border-color: var(--border-secondary);
+            transform: translateY(-1px);
         }
         
         .tool-btn.active {
-            background: #4CAF50;
-            border-color: #4CAF50;
-            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+            box-shadow: 0 0 8px rgba(46, 160, 67, 0.4);
         }
         
         .tool-btn .tooltip {
@@ -443,10 +627,10 @@
         .zoom-level {
             display: flex;
             align-items: center;
-            color: #aaa;
-            font-size: 14px;
-            font-weight: bold;
-            min-width: 60px;
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 500;
+            min-width: 50px;
             justify-content: center;
         }
         
@@ -456,85 +640,87 @@
             right: 20px;
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 4px;
             z-index: 100;
         }
         
         .zoom-btn {
-            width: 45px;
-            height: 45px;
-            background: rgba(42, 42, 42, 0.95);
-            color: white;
-            border: 2px solid #555;
-            border-radius: 8px;
-            font-size: 22px;
+            width: 40px;
+            height: 40px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: 6px;
+            font-size: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all 0.2s;
-            backdrop-filter: blur(10px);
+            transition: all 0.15s ease;
+            box-shadow: var(--shadow-md);
         }
         
         .zoom-btn:hover {
-            background: #3a3a3a;
-            border-color: #4CAF50;
-            transform: scale(1.1);
+            background: var(--bg-tertiary);
+            border-color: var(--border-secondary);
+            transform: scale(1.05);
         }
         
         .zone-marker {
             position: absolute;
-            width: 20px;
-            height: 20px;
-            background: #4CAF50;
-            border: 3px solid white;
+            width: 18px;
+            height: 18px;
+            background: var(--accent-blue);
+            border: 2px solid white;
             border-radius: 50%;
             transform: translate(-50%, -50%);
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s ease;
             z-index: 10;
-            box-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
+            box-shadow: 0 0 8px rgba(46, 160, 67, 0.6);
         }
         
         .zone-marker.no-go {
-            background: #f44336;
-            box-shadow: 0 0 15px rgba(244, 67, 54, 0.9);
+            background: var(--accent-red);
+            box-shadow: 0 0 10px rgba(248, 81, 73, 0.7);
         }
         
         .zone-marker.speed-zone {
-            background: #FFC107;
-            box-shadow: 0 0 10px rgba(255, 193, 7, 0.8);
+            background: var(--accent-yellow);
+            box-shadow: 0 0 8px rgba(210, 153, 34, 0.6);
         }
         
         .zone-marker:hover {
-            width: 26px;
-            height: 26px;
-            box-shadow: 0 0 15px rgba(76, 175, 80, 1);
+            width: 22px;
+            height: 22px;
+            box-shadow: 0 0 12px rgba(46, 160, 67, 0.9);
         }
         
         .zone-label {
             position: absolute;
-            background: rgba(0, 0, 0, 0.8);
-            color: #4CAF50;
+            background: var(--bg-secondary);
+            color: var(--accent-blue);
             padding: 4px 8px;
-            border-radius: 3px;
-            font-size: 12px;
-            font-weight: bold;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
             white-space: nowrap;
             pointer-events: none;
             transform: translate(-50%, -35px);
+            border: 1px solid var(--border-primary);
+            box-shadow: var(--shadow-sm);
         }
         
         .loading {
             text-align: center;
             padding: 20px;
-            color: #4CAF50;
+            color: var(--text-secondary);
         }
         
         .robot-marker {
             position: absolute;
-            width: 30px;
-            height: 30px;
+            width: 28px;
+            height: 28px;
             transform: translate(-50%, -50%);
             z-index: 20;
         }
@@ -543,9 +729,9 @@
             width: 100%;
             height: 100%;
             background: #FF9800;
-            border: 4px solid white;
+            border: 3px solid white;
             border-radius: 50%;
-            box-shadow: 0 0 15px rgba(255, 152, 0, 0.9);
+            box-shadow: 0 0 12px rgba(255, 152, 0, 0.8);
         }
         
         .robot-direction {
@@ -566,44 +752,46 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.7);
             z-index: 10000;
             align-items: center;
             justify-content: center;
         }
         
         .confirm-dialog {
-            background: #2a2a2a;
-            padding: 30px;
+            background: var(--bg-secondary);
+            padding: 24px;
             border-radius: 8px;
             max-width: 400px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-primary);
         }
         
         .confirm-message {
-            color: white;
-            font-size: 16px;
-            margin-bottom: 25px;
+            color: var(--text-primary);
+            font-size: 14px;
+            margin-bottom: 20px;
             line-height: 1.5;
         }
         
         .confirm-buttons {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             justify-content: flex-end;
         }
         
         .confirm-btn {
-            padding: 10px 24px;
+            padding: 8px 20px;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.15s ease;
         }
         
         .confirm-btn-yes {
-            background: #f44336;
+            background: var(--accent-red);
             color: white;
         }
         
@@ -612,12 +800,13 @@
         }
         
         .confirm-btn-no {
-            background: #555;
-            color: white;
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            border: 1px solid var(--border-secondary);
         }
         
         .confirm-btn-no:hover {
-            background: #666;
+            background: var(--bg-tertiary);
         }
         
         /* Notification Popup */
@@ -628,11 +817,11 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(0, 0, 0, 0.7);
             z-index: 10001;
             align-items: center;
             justify-content: center;
-            animation: fadeIn 0.3s;
+            animation: fadeIn 0.2s;
         }
         
         @keyframes fadeIn {
@@ -641,90 +830,90 @@
         }
         
         .notification-dialog {
-            background: linear-gradient(145deg, #2a2a2a, #1f1f1f);
-            padding: 40px;
-            border-radius: 12px;
+            background: var(--bg-secondary);
+            padding: 32px;
+            border-radius: 8px;
             max-width: 450px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
-            border: 2px solid #444;
-            animation: slideDown 0.3s;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-primary);
+            animation: slideDown 0.2s;
         }
         
         @keyframes slideDown {
-            from { transform: translateY(-50px); opacity: 0; }
+            from { transform: translateY(-30px); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
         }
         
         .notification-icon {
-            font-size: 64px;
+            font-size: 48px;
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
         
         .notification-title {
-            color: white;
-            font-size: 24px;
-            font-weight: bold;
+            color: var(--text-primary);
+            font-size: 18px;
+            font-weight: 600;
             text-align: center;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
         }
         
         .notification-message {
-            color: #ccc;
-            font-size: 16px;
+            color: var(--text-secondary);
+            font-size: 14px;
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
             line-height: 1.6;
         }
         
         .notification-buttons {
             display: flex;
-            gap: 12px;
+            gap: 10px;
             justify-content: center;
             flex-wrap: wrap;
         }
         
         .notification-btn {
-            padding: 12px 28px;
+            padding: 10px 24px;
             border: none;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 15px;
-            font-weight: bold;
-            transition: all 0.2s;
-            min-width: 120px;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.15s ease;
+            min-width: 100px;
         }
         
         .notification-btn-success {
-            background: #4CAF50;
+            background: var(--accent-blue);
             color: white;
         }
         
         .notification-btn-success:hover {
-            background: #45a049;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+            background: var(--accent-blue-hover);
+            transform: translateY(-1px);
         }
         
         .notification-btn-warning {
-            background: #FFC107;
-            color: #000;
+            background: var(--accent-yellow);
+            color: var(--bg-primary);
+            font-weight: 700;
         }
         
         .notification-btn-warning:hover {
-            background: #ffb300;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(255, 193, 7, 0.4);
+            background: #c28419;
+            transform: translateY(-1px);
         }
         
         .notification-btn-secondary {
-            background: #666;
-            color: white;
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            border: 1px solid var(--border-secondary);
         }
         
         .notification-btn-secondary:hover {
-            background: #777;
-            transform: translateY(-2px);
+            background: var(--bg-tertiary);
+            transform: translateY(-1px);
         }
         
         /* Collapsible Section */
@@ -738,13 +927,13 @@
         }
         
         .collapsible-header:hover h2 {
-            color: #4CAF50;
+            color: var(--accent-blue);
         }
         
         .collapse-icon {
-            font-size: 18px;
-            transition: transform 0.3s;
-            color: #4CAF50;
+            font-size: 16px;
+            transition: transform 0.2s;
+            color: var(--text-secondary);
         }
         
         .collapse-icon.collapsed {
@@ -755,7 +944,7 @@
             max-height: 400px;
             overflow-y: auto;
             overflow-x: hidden;
-            transition: max-height 0.3s ease-out;
+            transition: max-height 0.2s ease-out;
         }
         
         .collapsible-content.collapsed {
@@ -765,21 +954,21 @@
         
         /* Custom scrollbar for zones list */
         .collapsible-content::-webkit-scrollbar {
-            width: 8px;
+            width: 6px;
         }
         
         .collapsible-content::-webkit-scrollbar-track {
-            background: #1a1a1a;
-            border-radius: 4px;
+            background: var(--bg-primary);
+            border-radius: 3px;
         }
         
         .collapsible-content::-webkit-scrollbar-thumb {
-            background: #4CAF50;
-            border-radius: 4px;
+            background: var(--border-secondary);
+            border-radius: 3px;
         }
         
         .collapsible-content::-webkit-scrollbar-thumb:hover {
-            background: #45a049;
+            background: var(--text-tertiary);
         }
         
         /* Joystick Control */
@@ -787,20 +976,21 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 20px;
-            background: #333;
-            border-radius: 8px;
-            margin-top: 20px;
+            padding: 16px;
+            background: var(--bg-elevated);
+            border-radius: 6px;
+            margin-top: 12px;
+            border: 1px solid var(--border-primary);
         }
         
         .joystick-pad {
             position: relative;
-            width: 200px;
-            height: 200px;
-            background: radial-gradient(circle, #2a2a2a, #1a1a1a);
-            border: 3px solid #555;
+            width: 180px;
+            height: 180px;
+            background: radial-gradient(circle, var(--bg-tertiary), var(--bg-primary));
+            border: 2px solid var(--border-secondary);
             border-radius: 50%;
-            margin: 20px 0;
+            margin: 16px 0;
             box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
         }
         
@@ -808,33 +998,34 @@
             position: absolute;
             top: 50%;
             left: 50%;
-            width: 20px;
-            height: 20px;
-            background: #666;
+            width: 16px;
+            height: 16px;
+            background: var(--border-secondary);
             border-radius: 50%;
             transform: translate(-50%, -50%);
         }
         
         .joystick-btn {
             position: absolute;
-            width: 50px;
-            height: 50px;
-            background: linear-gradient(145deg, #4CAF50, #45a049);
-            border: 2px solid #fff;
+            width: 44px;
+            height: 44px;
+            background: var(--accent-blue);
+            border: 2px solid white;
             border-radius: 50%;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 24px;
+            font-size: 20px;
             color: white;
             transition: all 0.1s;
             user-select: none;
+            box-shadow: var(--shadow-sm);
         }
         
         .joystick-btn:active {
             transform: scale(0.9);
-            box-shadow: 0 0 15px rgba(76, 175, 80, 0.8);
+            box-shadow: 0 0 12px rgba(46, 160, 67, 0.7);
         }
         
         .joystick-btn.up {
@@ -863,23 +1054,23 @@
         
         .joystick-info {
             text-align: center;
-            color: #aaa;
-            font-size: 12px;
-            margin-top: 10px;
+            color: var(--text-secondary);
+            font-size: 11px;
+            margin-top: 8px;
         }
         
         .speed-slider {
             width: 100%;
-            margin-top: 15px;
+            margin-top: 12px;
         }
         
         .speed-label {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            color: #aaa;
-            font-size: 12px;
-            margin-bottom: 5px;
+            color: var(--text-secondary);
+            font-size: 11px;
+            margin-bottom: 4px;
         }
     </style>
 </head>
@@ -905,6 +1096,21 @@
         </div>
     </div>
     
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+        <button class="tab-button active" onclick="switchTab('navigator')">
+            🗺️ Zone Navigator
+        </button>
+        <button class="tab-button" onclick="switchTab('editor')">
+            🛠️ Map Editor
+        </button>
+        <button class="tab-button" onclick="switchTab('maps')">
+            📁 Map Manager
+        </button>
+    </div>
+    
+    <!-- Zone Navigator Tab -->
+    <div id="navigator-tab" class="tab-content active">
     <div id="container">
         <div id="sidebar">
             <div class="sidebar-header">
@@ -917,10 +1123,38 @@
                 🕹️ MANUAL MODE
             </button>
             
-            <!-- E-STOP -->
-            <button class="estop-btn" onclick="emergencyStop()" title="Emergency Stop (Press E)">
-                🛑 E-STOP
-            </button>
+            <!-- E-STOP Toggle -->
+            <div class="estop-toggle" title="Emergency Stop">
+                <label class="switch">
+                    <input type="checkbox" id="estop-switch" onchange="toggleEStop(this)">
+                    <span class="slider round"></span>
+                </label>
+                <div class="estop-label">
+                    <div class="estop-title">E-STOP</div>
+                    <div class="estop-state" id="estop-state-label">INACTIVE</div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Configuration Layouts</h2>
+                <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                    <button class="btn-save" style="flex: 1; padding: 8px; background: #4CAF50;" onclick="saveNewLayout()">
+                        💾 Save Layout
+                    </button>
+                    <button class="btn-save" style="flex: 1; padding: 8px; background: #2196F3;" onclick="loadLayoutsUI()">
+                        🔄 Refresh
+                    </button>
+                </div>
+                <div id="current-layout-display" style="padding: 8px; margin-bottom: 10px; background: rgba(76, 175, 80, 0.2); border-radius: 4px; font-size: 12px; display: none;">
+                    <div style="color: #4CAF50; font-weight: bold;">Active Layout:</div>
+                    <div id="current-layout-name" style="color: #fff; margin-top: 2px;"></div>
+                </div>
+                <div id="layouts-list" style="max-height: 200px; overflow-y: auto;">
+                    <div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">
+                        No saved layouts
+                    </div>
+                </div>
+            </div>
             
             <div class="card">
                 <div class="card-header">
@@ -1046,6 +1280,9 @@
                         <button class="btn-save" style="background: #4CAF50; flex: 1; padding: 6px;" onclick="sendDrawnPath()">
                             Follow Path
                         </button>
+                        <button class="btn-save" style="background: #FF9800; flex: 1; padding: 6px;" onclick="saveDrawnPath()">
+                            Save Path
+                        </button>
                         <button class="btn-delete" style="flex: 1; padding: 6px;" onclick="clearDrawnPath()">
                             Clear
                         </button>
@@ -1057,6 +1294,15 @@
                     <button class="btn-delete" style="width: 100%; margin-top: 10px; padding: 6px;" onclick="stopPathFollowing()">
                         Stop Path
                     </button>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Saved Paths</h2>
+                <div id="saved-paths-list" style="max-height: 200px; overflow-y: auto;">
+                    <div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">
+                        No saved paths
+                    </div>
                 </div>
             </div>
             
@@ -1250,6 +1496,7 @@
         }
         
         async function toggleSequence() {
+            console.log('toggleSequence called, sequenceActive=' + sequenceActive, 'zones=' + Object.keys(zones).length);
             if (sequenceActive) {
                 // Stop sequence
                 const confirmed = await showConfirm('Stop the current sequence?', 'Stop', 'Cancel');
@@ -1276,8 +1523,11 @@
                 // Start sequence with all zones in order
                 const zoneNames = Object.keys(zones);
                 
+                console.log('zoneNames =', zoneNames);
+                
                 if (zoneNames.length === 0) {
-                    showStatus('No zones to navigate', 'error');
+                    showStatus('No zones to navigate. Create a zone first.', 'error');
+                    console.warn('No zones available for sequence');
                     return;
                 }
                 
@@ -1314,8 +1564,12 @@
             
             loadMap();
             loadZones();
+            loadSavedPaths();
+            loadLayoutsUI();
             loadRobotPose();
+            loadEStopStatus();
             loadSequenceStatus();
+            checkForInterruptedMission();  // Check if there's a mission to resume
             
             // Set up canvas interaction
             canvas.addEventListener('click', onCanvasClick);
@@ -1333,6 +1587,11 @@
             // Refresh sequence status every second
             setInterval(() => {
                 loadSequenceStatus();
+            }, 1000);
+
+            // Refresh E-STOP status every second
+            setInterval(() => {
+                loadEStopStatus();
             }, 1000);
             
             // Refresh path following status every second
@@ -1432,6 +1691,20 @@
                     if (mapData) drawMap();
                 })
                 .catch(error => console.error('Error loading robot pose:', error));
+        }
+
+        function loadEStopStatus() {
+            fetch('/api/estop/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (typeof data.estop_active !== 'undefined') {
+                        setEStopUI(data.estop_active);
+                    } else if (data.status) {
+                        const active = data.status.toLowerCase().includes('active');
+                        setEStopUI(active);
+                    }
+                })
+                .catch(error => console.error('Error loading E-STOP status:', error));
         }
 
         function loadPath() {
@@ -1675,11 +1948,11 @@
             // Draw lidar scan points
             if (laserScan && laserScan.length > 0) {
                 ctx.save();
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
                 for (const point of laserScan) {
                     const [px, py] = worldToPixel(point.x, point.y);
                     ctx.beginPath();
-                    ctx.arc(px, py, 2, 0, 2 * Math.PI);
+                    ctx.arc(px, py, 3.5, 0, 2 * Math.PI);
                     ctx.fill();
                 }
                 ctx.restore();
@@ -1811,8 +2084,8 @@
                 }
             }
             
-            // Draw user-drawn path (show during drawing OR path following)
-            if ((isDrawingPath || pathFollowingActive) && drawnPath.length > 0) {
+            // Draw user-drawn path (show during drawing, path following, OR when a path is loaded)
+            if ((isDrawingPath || pathFollowingActive || drawnPath.length > 0) && drawnPath.length > 0) {
                 ctx.save();
                 
                 // Draw path line
@@ -2186,6 +2459,7 @@
         }
         
         function togglePathDrawing() {
+            console.log('togglePathDrawing called, isDrawingPath=' + isDrawingPath);
             isDrawingPath = !isDrawingPath;
             const btn = document.getElementById('path-draw-btn');
             const statusDiv = document.getElementById('path-status');
@@ -2236,10 +2510,13 @@
             .then(data => {
                 if (data.ok) {
                     showStatus(data.message, 'success');
-                    // Stop drawing mode after sending path
-                    if (isDrawingPath) {
-                        togglePathDrawing();
-                    }
+                    // Keep drawing visualization visible, just disable drawing mode
+                    isDrawingPath = false;
+                    const btn = document.getElementById('path-draw-btn');
+                    btn.textContent = '✏️ Draw New Path';
+                    btn.style.background = '#2196F3';
+                    // Keep the path visualization visible during following
+                    drawMap();
                     // Start monitoring path following
                     loadPathFollowingStatus();
                 } else {
@@ -2257,6 +2534,434 @@
             updatePathUI();
             drawMap();
             showStatus('Path cleared', 'info');
+        }
+        
+        async function saveDrawnPath() {
+            if (drawnPath.length < 2) {
+                showStatus('Path must have at least 2 points to save', 'error');
+                return;
+            }
+            
+            // Prompt for path name
+            const pathName = prompt('Enter a name for this path:');
+            if (!pathName || pathName.trim() === '') {
+                showStatus('Path name is required', 'error');
+                return;
+            }
+            
+            showStatus(`Saving path "${pathName}"...`, 'info');
+            
+            fetch('/api/path/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: pathName.trim(),
+                    path: drawnPath
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                    loadSavedPaths(); // Refresh the saved paths list
+                } else {
+                    showStatus(data.message || 'Failed to save path', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Path save error:', error);
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        function loadSavedPaths() {
+            fetch('/api/paths')
+            .then(response => response.json())
+            .then(data => {
+                const listDiv = document.getElementById('saved-paths-list');
+                const paths = data.paths || {};
+                
+                if (Object.keys(paths).length === 0) {
+                    listDiv.innerHTML = '<div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">No saved paths</div>';
+                    return;
+                }
+                
+                listDiv.innerHTML = '';
+                for (const [name, waypoints] of Object.entries(paths)) {
+                    const pathItem = document.createElement('div');
+                    pathItem.style.cssText = 'padding: 8px; margin-bottom: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; display: flex; align-items: center; justify-content: space-between;';
+                    
+                    const pathInfo = document.createElement('div');
+                    pathInfo.style.cssText = 'flex: 1;';
+                    pathInfo.innerHTML = `
+                        <div style="color: #fff; font-weight: bold; font-size: 13px;">${name}</div>
+                        <div style="color: #888; font-size: 11px;">${waypoints.length} waypoints</div>
+                    `;
+                    
+                    const buttons = document.createElement('div');
+                    buttons.style.cssText = 'display: flex; gap: 5px;';
+                    
+                    const loadBtn = document.createElement('button');
+                    loadBtn.textContent = 'Load';
+                    loadBtn.className = 'btn-save';
+                    loadBtn.style.cssText = 'background: #2196F3; padding: 4px 12px; font-size: 11px;';
+                    loadBtn.onclick = () => loadSavedPathByName(name);
+                    
+                    const followBtn = document.createElement('button');
+                    followBtn.textContent = 'Follow';
+                    followBtn.className = 'btn-save';
+                    followBtn.style.cssText = 'background: #4CAF50; padding: 4px 12px; font-size: 11px;';
+                    followBtn.onclick = () => followSavedPath(name);
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.textContent = '🗑️';
+                    deleteBtn.className = 'btn-delete';
+                    deleteBtn.style.cssText = 'padding: 4px 8px; font-size: 11px;';
+                    deleteBtn.onclick = () => deleteSavedPath(name);
+                    
+                    buttons.appendChild(loadBtn);
+                    buttons.appendChild(followBtn);
+                    buttons.appendChild(deleteBtn);
+                    
+                    pathItem.appendChild(pathInfo);
+                    pathItem.appendChild(buttons);
+                    listDiv.appendChild(pathItem);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading saved paths:', error);
+            });
+        }
+        
+        async function loadSavedPathByName(name) {
+            fetch(`/api/path/load/${encodeURIComponent(name)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok && data.path) {
+                    drawnPath = data.path;
+                    isDrawingPath = false;
+                    const btn = document.getElementById('path-draw-btn');
+                    btn.textContent = '✏️ Start Drawing';
+                    btn.style.background = '#2196F3';
+                    const statusDiv = document.getElementById('path-status');
+                    statusDiv.style.display = 'block';
+                    updatePathUI();
+                    drawMap();
+                    showStatus(`Path "${name}" loaded with ${data.path.length} waypoints`, 'success');
+                } else {
+                    showStatus(data.message || 'Failed to load path', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Path load error:', error);
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        async function followSavedPath(name) {
+            fetch(`/api/path/load/${encodeURIComponent(name)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok && data.path) {
+                    drawnPath = data.path;
+                    sendDrawnPath();
+                } else {
+                    showStatus(data.message || 'Failed to load path', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Path load error:', error);
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        async function deleteSavedPath(name) {
+            const confirmed = await showConfirm(
+                `Delete path "${name}"?`,
+                'Delete',
+                'Cancel'
+            );
+            
+            if (!confirmed) return;
+            
+            fetch(`/api/path/delete/${encodeURIComponent(name)}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                    loadSavedPaths(); // Refresh the list
+                } else {
+                    showStatus(data.message || 'Failed to delete path', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Path delete error:', error);
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        // Layout Management Functions
+        async function saveNewLayout() {
+            const layoutName = prompt('Enter a name for this layout configuration:');
+            if (!layoutName || layoutName.trim() === '') {
+                showStatus('Layout name is required', 'error');
+                return;
+            }
+            
+            const description = prompt('Enter a description (optional):') || '';
+            
+            showStatus(`Saving layout "${layoutName}"...`, 'info');
+            
+            fetch('/api/layout/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: layoutName.trim(),
+                    description: description.trim()
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(`${data.message} (${data.zones_count} zones, ${data.paths_count} paths)`, 'success');
+                    loadLayoutsUI(); // Refresh the layouts list
+                } else {
+                    showStatus(data.message || 'Failed to save layout', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Layout save error:', error);
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        function loadLayoutsUI() {
+            fetch('/api/layouts')
+            .then(response => response.json())
+            .then(data => {
+                const listDiv = document.getElementById('layouts-list');
+                const currentLayoutDiv = document.getElementById('current-layout-display');
+                const currentLayoutName = document.getElementById('current-layout-name');
+                const layouts = data.layouts || {};
+                
+                // Update current layout display
+                if (data.current) {
+                    currentLayoutDiv.style.display = 'block';
+                    currentLayoutName.textContent = data.current;
+                } else {
+                    currentLayoutDiv.style.display = 'none';
+                }
+                
+                if (Object.keys(layouts).length === 0) {
+                    listDiv.innerHTML = '<div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">No saved layouts</div>';
+                    return;
+                }
+                
+                listDiv.innerHTML = '';
+                for (const [name, info] of Object.entries(layouts)) {
+                    const layoutItem = document.createElement('div');
+                    layoutItem.style.cssText = 'padding: 8px; margin-bottom: 8px; background: rgba(255,255,255,0.05); border-radius: 4px;';
+                    
+                    const isActive = name === data.current;
+                    if (isActive) {
+                        layoutItem.style.background = 'rgba(76, 175, 80, 0.2)';
+                        layoutItem.style.border = '1px solid #4CAF50';
+                    }
+                    
+                    const layoutInfo = document.createElement('div');
+                    layoutInfo.innerHTML = `
+                        <div style="color: ${isActive ? '#4CAF50' : '#fff'}; font-weight: bold; font-size: 13px;">
+                            ${isActive ? '✓ ' : ''}${name}
+                        </div>
+                        <div style="color: #888; font-size: 11px; margin-top: 2px;">
+                            ${info.description || 'No description'}
+                        </div>
+                        <div style="color: #888; font-size: 10px; margin-top: 2px;">
+                            ${info.zones_count} zones, ${info.paths_count} paths
+                        </div>
+                    `;
+                    
+                    const buttons = document.createElement('div');
+                    buttons.style.cssText = 'display: flex; gap: 5px; margin-top: 8px;';
+                    
+                    if (!isActive) {
+                        const loadBtn = document.createElement('button');
+                        loadBtn.textContent = 'Load Layout';
+                        loadBtn.className = 'btn-save';
+                        loadBtn.style.cssText = 'background: #2196F3; padding: 4px 12px; font-size: 11px; flex: 1;';
+                        loadBtn.onclick = () => loadLayoutByName(name);
+                        buttons.appendChild(loadBtn);
+                    }
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.className = 'btn-delete';
+                    deleteBtn.style.cssText = 'padding: 4px 12px; font-size: 11px; flex: 1;';
+                    deleteBtn.onclick = () => deleteLayoutByName(name);
+                    buttons.appendChild(deleteBtn);
+                    
+                    layoutItem.appendChild(layoutInfo);
+                    layoutItem.appendChild(buttons);
+                    listDiv.appendChild(layoutItem);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading layouts:', error);
+            });
+        }
+        
+        async function loadLayoutByName(name) {
+            const confirmed = await showConfirm(
+                `Load layout "${name}"?\n\nThis will replace current zones and paths with the saved configuration.`,
+                'Load Layout',
+                'Cancel'
+            );
+            
+            if (!confirmed) return;
+            
+            showStatus(`Loading layout "${name}"...`, 'info');
+            
+            fetch(`/api/layout/load/${encodeURIComponent(name)}`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(`${data.message} (${data.zones_count} zones, ${data.paths_count} paths)`, 'success');
+                    loadLayoutsUI();
+                    loadZones();
+                    loadSavedPaths();
+                    drawMap();
+                } else {
+                    showStatus(data.message || 'Failed to load layout', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Layout load error:', error);
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        async function deleteLayoutByName(name) {
+            const confirmed = await showConfirm(
+                `Delete layout "${name}"?\n\nThis cannot be undone.`,
+                'Delete',
+                'Cancel'
+            );
+            
+            if (!confirmed) return;
+            
+            fetch(`/api/layout/delete/${encodeURIComponent(name)}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                    loadLayoutsUI(); // Refresh the list
+                } else {
+                    showStatus(data.message || 'Failed to delete layout', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Layout delete error:', error);
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        // Mission Resume Functions
+        function checkForInterruptedMission() {
+            fetch('/api/mission/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.active && data.type && data.interrupted_by) {
+                    const missionType = data.type === 'path' ? 'path following' : 
+                                       data.type === 'sequence' ? 'sequence navigation' : 
+                                       data.type;
+                    const progress = data.progress + 1;
+                    const total = data.type === 'path' ? data.data.length : 
+                                 data.type === 'sequence' ? data.data.length : 0;
+                    const interruptReason = data.interrupted_by === 'estop' ? 'E-STOP' :
+                                           data.interrupted_by === 'manual' ? 'Manual Stop' :
+                                           data.interrupted_by;
+                    
+                    showNotification(
+                        '⚠️',
+                        'Interrupted Mission Detected',
+                        `Previous ${missionType} was interrupted by ${interruptReason} at progress ${progress}/${total}. Resume mission?`,
+                        [
+                            {
+                                text: 'Resume Mission',
+                                style: 'success',
+                                action: () => {
+                                    resumeMission();
+                                    closeNotification();
+                                }
+                            },
+                            {
+                                text: 'Discard',
+                                style: 'danger',
+                                action: () => {
+                                    clearMissionState();
+                                    closeNotification();
+                                }
+                            },
+                            {
+                                text: 'Later',
+                                style: 'secondary',
+                                action: closeNotification
+                            }
+                        ]
+                    );
+                }
+            })
+            .catch(error => {
+                console.error('Error checking mission status:', error);
+            });
+        }
+        
+        function resumeMission() {
+            showStatus('Resuming interrupted mission...', 'info');
+            
+            fetch('/api/mission/resume', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                    
+                    // Refresh status displays based on mission type
+                    if (data.type === 'path') {
+                        loadPathFollowingStatus();
+                    } else if (data.type === 'sequence') {
+                        loadSequenceStatus();
+                    }
+                } else {
+                    showStatus(data.message || 'Failed to resume mission', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Mission resume error:', error);
+                showStatus('Error: ' + error, 'error');
+            });
+        }
+        
+        function clearMissionState() {
+            fetch('/api/mission/clear', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus('Mission state cleared', 'info');
+                }
+            })
+            .catch(error => {
+                console.error('Error clearing mission state:', error);
+            });
         }
 
         function showStatus(message, type) {
@@ -2314,53 +3019,44 @@
             }
         }
         
-        // Emergency Stop
-        function emergencyStop() {
-            if (eStopActive) {
-                showNotification(
-                    '[!]',
-                    'E-STOP ALREADY ACTIVE',
-                    'Emergency stop is already engaged. Reset to resume operations.',
-                    [{text: 'OK', style: 'warning', action: closeNotification}]
-                );
-                return;
+        // Emergency Stop Toggle
+        function setEStopUI(active) {
+            eStopActive = active;
+            const sw = document.getElementById('estop-switch');
+            const label = document.getElementById('estop-state-label');
+            if (sw) sw.checked = active;
+            if (label) {
+                label.textContent = active ? 'ACTIVE' : 'INACTIVE';
+                label.classList.toggle('active', active);
             }
-            
-            showNotification(
-                '[STOP]',
-                'EMERGENCY STOP ACTIVATED',
-                'All robot movement has been halted. All navigation goals cancelled.',
-                [
-                    {text: 'Reset & Resume', style: 'success', action: () => { resetEStop(); closeNotification(); }},
-                    {text: 'Keep Stopped', style: 'secondary', action: closeNotification}
-                ]
-            );
-            
-            eStopActive = true;
-            
-            // Cancel all active navigation
-            if (pathFollowingActive) stopPathFollowing();
-            if (sequenceActive) toggleSequence();
-            
-            // Send stop command
-            fetch('/api/estop/activate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'}
-            })
-            .catch(error => console.error('E-STOP error:', error));
         }
-        
-        function resetEStop() {
-            eStopActive = false;
-            fetch('/api/estop/reset', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'}
-            })
-            .then(response => response.json())
-            .then(data => {
-                showStatus('E-STOP reset - operations resumed', 'success');
-            })
-            .catch(error => console.error('E-STOP reset error:', error));
+
+        function toggleEStop(el) {
+            const target = el && typeof el.checked !== 'undefined' ? el.checked : !eStopActive;
+            if (target === eStopActive) return; // no change
+            setEStopUI(target);
+
+            // Cancel local activities immediately when activating
+            if (target) {
+                if (pathFollowingActive) stopPathFollowing();
+                if (sequenceActive) toggleSequence();
+            }
+
+            const endpoint = target ? '/api/estop/activate' : '/api/estop/reset';
+            fetch(endpoint, { method: 'POST', headers: {'Content-Type': 'application/json'} })
+                .then(r => r.json())
+                .then(() => {
+                    if (target) {
+                        showStatus('E-STOP engaged. Robot halted.', 'warning');
+                    } else {
+                        showStatus('E-STOP reset - operations resumed', 'success');
+                    }
+                })
+                .catch(error => {
+                    console.error('E-STOP toggle error:', error);
+                    // Revert UI on failure
+                    setEStopUI(!target);
+                });
         }
         
         // Manual Mode Control
@@ -2657,7 +3353,7 @@
                 case 'e':
                 case 'E':
                     if (!manualActive) {
-                        emergencyStop();
+                        toggleEStop();
                         e.preventDefault();
                     }
                     break;
@@ -2695,5 +3391,280 @@
             }
         });
     </script>
-</body>
-</html>
+    </div>
+    <!-- End Zone Navigator Tab -->
+    
+    <!-- Map Editor Tab -->
+    <div id="editor-tab" class="tab-content">
+        <iframe id="editor-iframe" src="/editor" style="width: 100%; height: 100%; border: none;"></iframe>
+    </div>
+    <!-- End Map Editor Tab -->
+    
+    <!-- Map Manager Tab -->
+    <div id="maps-tab" class="tab-content">
+        <div style="padding: 30px; max-width: 900px; margin: 0 auto;">
+            <h1 style="color: #4CAF50; margin-bottom: 30px;">📁 Map Manager</h1>
+            
+            <!-- Active Map Display -->
+            <div class="card" style="margin-bottom: 30px;">
+                <div class="card-header">
+                    <h3 class="card-title">Current Active Map</h3>
+                </div>
+                <div id="active-map-display" style="padding: 15px; background: var(--bg-elevated); border-radius: 6px; font-family: monospace; color: var(--accent-blue); border: 1px solid var(--border-primary);">
+                    Loading...
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button class="btn" onclick="refreshActiveMap()" style="flex: 1; width: auto;">
+                        🔄 Refresh
+                    </button>
+                    <button class="btn" onclick="exportCurrentMap()" style="flex: 1; width: auto; background: var(--accent-blue);">
+                        💾 Download Map
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Upload New Map -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Upload New Map</h3>
+                </div>
+                
+                <div class="controls">
+                    <label>Map Name (without extension):</label>
+                    <input type="text" id="upload-map-name" placeholder="e.g., warehouse_map" style="margin-bottom: 15px;">
+                    
+                    <label>Map Image (.pgm file):</label>
+                    <input type="file" id="upload-pgm" accept=".pgm" style="margin-bottom: 15px; background: #222; padding: 10px; border: 1px solid #555; border-radius: 4px; width: 100%; color: white;">
+                    
+                    <label>Map Configuration (.yaml file):</label>
+                    <input type="file" id="upload-yaml" accept=".yaml,.yml" style="margin-bottom: 20px; background: #222; padding: 10px; border: 1px solid #555; border-radius: 4px; width: 100%; color: white;">
+                    
+                    <button class="btn" onclick="uploadMap()" style="width: 100%; background: #4CAF50;">
+                        📤 Upload Map
+                    </button>
+                </div>
+                
+                <div id="upload-status" style="margin-top: 15px;"></div>
+            </div>
+            
+            <!-- Available Maps (future enhancement) -->
+            <div class="card" style="margin-top: 30px;">
+                <div class="card-header">
+                    <h3 class="card-title">Available Maps</h3>
+                </div>
+                <div id="available-maps-list" style="padding: 15px;">
+                    <em style="color: #888;">List available maps and switch between them (coming soon)</em>
+                </div>
+            </div>
+            
+            <div class="instructions">
+                <h3>📘 Instructions</h3>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li>Upload both .pgm and .yaml files for a complete map</li>
+                    <li>The system will automatically update all configuration files</li>
+                    <li>After uploading, you must <strong>restart Nav2</strong> for changes to take effect</li>
+                    <li>Old configs are backed up automatically with timestamps</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <!-- End Map Manager Tab -->
+    
+    <script>
+        // Tab switching function
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Deactivate all buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            const targetTab = document.getElementById(tabName + '-tab');
+            if (targetTab) {
+                targetTab.classList.add('active');
+            }
+            
+            // Activate button
+            event.currentTarget.classList.add('active');
+            
+            // Load editor iframe when switching to editor
+            if (tabName === 'editor') {
+                const iframe = document.getElementById('editor-iframe');
+                if (!iframe.src || iframe.src === 'about:blank') {
+                    iframe.src = '/editor';
+                }
+            }
+            
+            // Load active map when switching to maps tab
+            if (tabName === 'maps') {
+                refreshActiveMap();
+            }
+        }
+        
+        // Map Manager Functions
+        async function refreshActiveMap() {
+            const display = document.getElementById('active-map-display');
+            display.textContent = 'Loading...';
+            display.style.color = 'var(--text-secondary)';
+            
+            try {
+                const response = await fetch('/api/map/get_active');
+                const data = await response.json();
+                
+                if (data.success) {
+                    display.textContent = data.map_path;
+                    display.style.color = 'var(--accent-blue)';
+                    // Store for export
+                    display.setAttribute('data-map-path', data.map_path);
+                } else {
+                    display.textContent = 'Error: ' + data.message;
+                    display.style.color = 'var(--accent-red)';
+                }
+            } catch (error) {
+                display.textContent = 'Error: ' + error.message;
+                display.style.color = 'var(--accent-red)';
+            }
+        }
+        
+        async function exportCurrentMap() {
+            const display = document.getElementById('active-map-display');
+            const mapPath = display.getAttribute('data-map-path');
+            
+            if (!mapPath) {
+                alert('No active map loaded. Please refresh first.');
+                return;
+            }
+            
+            try {
+                // Extract filename from path
+                const yamlFilename = mapPath.split('/').pop();
+                const baseName = yamlFilename.replace('.yaml', '');
+                const pgmFilename = baseName + '.pgm';
+                
+                // Download both PGM and YAML files
+                const files = [
+                    {name: pgmFilename, type: 'PGM Image'},
+                    {name: yamlFilename, type: 'YAML Config'}
+                ];
+                
+                for (const file of files) {
+                    const a = document.createElement('a');
+                    a.href = '/api/map/download/' + file.name;
+                    a.download = file.name;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Small delay between downloads
+                }
+                
+                showNotification('success', '✓ Success', `Downloading ${baseName}.pgm and ${yamlFilename}`);
+            } catch (error) {
+                alert('Error exporting map: ' + error.message);
+            }
+        }
+        
+        async function uploadMap() {
+            const mapName = document.getElementById('upload-map-name').value.trim();
+            const pgmFile = document.getElementById('upload-pgm').files[0];
+            const yamlFile = document.getElementById('upload-yaml').files[0];
+            const statusDiv = document.getElementById('upload-status');
+            
+            // Validation
+            if (!mapName) {
+                statusDiv.innerHTML = '<div class="status error">Please enter a map name</div>';
+                return;
+            }
+            
+            if (!pgmFile || !yamlFile) {
+                statusDiv.innerHTML = '<div class="status error">Please select both .pgm and .yaml files</div>';
+                return;
+            }
+            
+            statusDiv.innerHTML = '<div class="status info">Uploading map...</div>';
+            
+            try {
+                // Read files
+                const pgmData = await readFileAsBase64(pgmFile);
+                const yamlContent = await readFileAsText(yamlFile);
+                
+                // Upload map
+                const response = await fetch('/api/map/upload', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        map_name: mapName,
+                        pgm_base64: pgmData,
+                        yaml_content: yamlContent
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    statusDiv.innerHTML = `<div class="status success">✓ ${result.message}</div>`;
+                    
+                    // Ask if user wants to set as active map
+                    if (confirm('Map uploaded successfully! Set as active map now?')) {
+                        await setActiveMap(result.map_path);
+                    }
+                    
+                    // Clear form
+                    document.getElementById('upload-map-name').value = '';
+                    document.getElementById('upload-pgm').value = '';
+                    document.getElementById('upload-yaml').value = '';
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">✗ ${result.message}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">✗ Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function setActiveMap(mapPath) {
+            try {
+                const response = await fetch('/api/map/set_active', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({map_path: mapPath})
+                });
+                
+                const result = await response.json();
+                const statusDiv = document.getElementById('upload-status');
+                
+                if (result.success) {
+                    statusDiv.innerHTML = `<div class="status success">✓ ${result.message}</div>`;
+                    refreshActiveMap();
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">✗ ${result.message}</div>`;
+                }
+            } catch (error) {
+                alert('Error setting active map: ' + error.message);
+            }
+        }
+        
+        function readFileAsBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsText(file);
+            });
+        }
+    </script>
