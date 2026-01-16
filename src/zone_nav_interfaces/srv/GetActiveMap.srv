@@ -1,0 +1,5 @@
+# Service to get the currently active map path
+---
+bool success
+string map_yaml_path           # Full path to the active map YAML
+string message

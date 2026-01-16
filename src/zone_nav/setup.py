@@ -11,7 +11,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/web/templates', 
-            ['zone_nav/web/templates/index.html']),
+            ['zone_nav/web/templates/index.html', 'zone_nav/web/templates/map_editor.html']),
     ],
     install_requires=['setuptools', 'flask', 'flask-cors', 'pillow', 'pyyaml'],
     zip_safe=True,
@@ -26,6 +26,9 @@ setup(
             'zone_web_ui = zone_nav.zone_web_ui:main',
             'mode_switcher = zone_nav.mode_switcher:main',
             'safety_controller = zone_nav.safety_controller:main',
+            'scan_merger = zone_nav.scan_merger:main',
+            'keepout_zone_publisher = zone_nav.keepout_zone_publisher:main',
+            'map_manager = zone_nav.map_manager:main',
         ],
     },
 )

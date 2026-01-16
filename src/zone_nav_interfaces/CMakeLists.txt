@@ -13,6 +13,9 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SaveZone.srv"
   "srv/GoToZone.srv"
+  "srv/UploadMap.srv"
+  "srv/SetActiveMap.srv"
+  "srv/GetActiveMap.srv"
 )
 
 ament_export_dependencies(rosidl_default_runtime)

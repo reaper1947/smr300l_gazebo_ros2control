@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Map Editor - Warehouse Robot</title>
+    <link rel="stylesheet" href="/static/css/map_editor.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Professional Map Editor</h1>
+            <div class="header-info">
+                <span id="resolution-info">Resolution: --</span>
+                <span id="map-size">Map: -- x --</span>
+            </div>
+        </header>
+
+        <div class="toolbar">
+            <div class="tool-group">
+                <h3>Drawing Tools</h3>
+                <button class="tool-btn" id="tool-obstacle-rect" data-tool="obstacle-rect">
+                    Obstacle Rect
+                </button>
+                <button class="tool-btn" id="tool-obstacle-circle" data-tool="obstacle-circle">
+                    Obstacle Circle
+                </button>
+                <button class="tool-btn" id="tool-obstacle-poly" data-tool="obstacle-poly">
+                    Obstacle Polygon
+                </button>
+            </div>
+
+            <div class="tool-group">
+                <h3>Zone Tools</h3>
+                <button class="tool-btn" id="tool-nogo" data-tool="nogo">
+                    No-Go Zone
+                </button>
+                <button class="tool-btn" id="tool-slow" data-tool="slow">
+                    Slow Zone
+                </button>
+                <div class="speed-input">
+                    <label>Speed Limit:</label>
+                    <input type="number" id="speed-limit" value="0.2" step="0.1" min="0.1" max="1.0">
+                    <span>m/s</span>
+                </div>
+                <button class="tool-btn" id="tool-restricted" data-tool="restricted">
+                    Restricted
+                </button>
+            </div>
+
+            <div class="tool-group">
+                <h3>Measurement</h3>
+                <button class="tool-btn" id="tool-measure" data-tool="measure">
+                    Measure Distance
+                </button>
+                <button class="tool-btn" id="tool-area" data-tool="area">
+                    Measure Area
+                </button>
+                <div id="measurement-result">--</div>
+            </div>
+
+            <div class="tool-group">
+                <h3>Layer Control</h3>
+                <label><input type="checkbox" id="layer-obstacles" checked> Obstacles</label>
+                <label><input type="checkbox" id="layer-nogo" checked> No-Go Zones</label>
+                <label><input type="checkbox" id="layer-slow" checked> Slow Zones</label>
+                <label><input type="checkbox" id="layer-restricted" checked> Restricted</label>
+            </div>
+
+            <div class="tool-group">
+                <h3>Actions</h3>
+                <button class="action-btn" id="btn-clear-obstacles">Clear Obstacles</button>
+                <button class="action-btn" id="btn-clear-nogo">Clear No-Go</button>
+                <button class="action-btn" id="btn-clear-slow">Clear Slow</button>
+                <button class="action-btn" id="btn-clear-all">Clear All Layers</button>
+                <button class="action-btn success" id="btn-export">Export Map</button>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="map-canvas"></canvas>
+            <div class="coords-display" id="coords-display">X: -- Y: --</div>
+            <div class="instructions" id="instructions">
+                Select a tool to begin editing
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <span id="status-text">Ready</span>
+            <span id="object-count">Objects: 0</span>
+        </div>
+    </div>
+
+    <script src="/static/js/map_editor.js"></script>
+</body>
+</html>

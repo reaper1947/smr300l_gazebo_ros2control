@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .editor-container {
+            display: flex;
+            height: 100%;
+        }
+
+        .toolbar-left {
+            width: 250px;
+            background: #2a2a2a;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 2px solid #444;
+        }
+
+        .tool-section {
+            margin-bottom: 25px;
+        }
+
+        .tool-section h3 {
+            color: #667eea;
+            font-size: 14px;
+            margin-bottom: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .tool-btn {
+            width: 100%;
+            padding: 10px;
+            margin: 6px 0;
+            background: #3a3a3a;
+            border: 2px solid #555;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+            text-align: left;
+        }
+
+        .tool-btn:hover {
+            background: #4a4a4a;
+            border-color: #667eea;
+            transform: translateX(3px);
+        }
+
+        .tool-btn.active {
+            background: #667eea;
+            border-color: #667eea;
+            box-shadow: 0 0 15px rgba(102, 126, 234, 0.5);
+        }
+
+        .action-btn {
+            width: 100%;
+            padding: 10px;
+            margin: 6px 0;
+            background: #ff6b6b;
+            border: none;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            background: #ee5a5a;
+            transform: scale(1.02);
+        }
+
+        .action-btn.success {
+            background: #51cf66;
+        }
+
+        .action-btn.success:hover {
+            background: #40c057;
+        }
+
+        .speed-input {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 10px 0;
+            padding: 8px;
+            background: #3a3a3a;
+            border-radius: 6px;
+        }
+
+        .speed-input label {
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .speed-input input {
+            width: 60px;
+            padding: 5px;
+            background: #2a2a2a;
+            border: 1px solid #555;
+            color: white;
+            border-radius: 4px;
+        }
+
+        .layer-checkbox {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            cursor: pointer;
+        }
+
+        .layer-checkbox input {
+            margin-right: 8px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .canvas-area {
+            flex: 1;
+            background: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #map-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            cursor: crosshair;
+            background: white;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+        }
+
+        .coords-display {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(0, 0, 0, 0.9);
+            color: #00ff00;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            border: 1px solid #00ff00;
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(102, 126, 234, 0.95);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .status-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #2a2a2a;
+            color: white;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            border-top: 2px solid #444;
+            font-size: 13px;
+        }
+
+        .measurement-result {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            text-align: center;
+            font-weight: 600;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="editor-container">
+        <div class="toolbar-left">
+            <div class="tool-section" style="background: #667eea; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <h3 style="color: white; margin-bottom: 8px;">Current Map</h3>
+                <div id="map-name" style="color: white; font-size: 12px; word-break: break-all;">Loading...</div>
+            </div>
+            
+            <div class="tool-section">
+                <h3>🔨 Drawing Tools</h3>
+                <button class="tool-btn" data-tool="obstacle-rect">⬛ Obstacle Rectangle</button>
+                <button class="tool-btn" data-tool="obstacle-circle">⚫ Obstacle Circle</button>
+                <button class="tool-btn" data-tool="obstacle-poly">🔷 Obstacle Polygon</button>
+            </div>
+
+            <div class="tool-section">
+                <h3>Zone Tools</h3>
+                <button class="tool-btn" data-tool="nogo">No-Go Zone</button>
+                <button class="tool-btn" data-tool="slow">Slow Zone</button>
+                <div class="speed-input">
+                    <label>Speed:</label>
+                    <input type="number" id="speed-limit" value="0.2" step="0.1" min="0.1" max="1.0">
+                    <span style="color: #aaa;">m/s</span>
+                </div>
+                <button class="tool-btn" data-tool="restricted">⛔ Restricted Area</button>
+            </div>
+
+            <div class="tool-section">
+                <h3>Measurement</h3>
+                <button class="tool-btn" data-tool="measure">Measure Distance</button>
+                <div id="measurement-result" class="measurement-result" style="display: none;">--</div>
+            </div>
+
+            <div class="tool-section">
+                <h3>👁️ Layers</h3>
+                <label class="layer-checkbox">
+                    <input type="checkbox" id="layer-obstacles" checked>
+                    <span>Obstacles</span>
+                </label>
+                <label class="layer-checkbox">
+                    <input type="checkbox" id="layer-nogo" checked>
+                    <span>No-Go Zones</span>
+                </label>
+                <label class="layer-checkbox">
+                    <input type="checkbox" id="layer-slow" checked>
+                    <span>Slow Zones</span>
+                </label>
+                <label class="layer-checkbox">
+                    <input type="checkbox" id="layer-restricted" checked>
+                    <span>Restricted</span>
+                </label>
+            </div>
+
+            <div class="tool-section">
+                <h3>Actions</h3>
+                <button class="action-btn" onclick="clearLayer('obstacles')">Clear Obstacles</button>
+                <button class="action-btn" onclick="clearLayer('no_go_zones')">Clear No-Go</button>
+                <button class="action-btn" onclick="clearLayer('slow_zones')">Clear Slow</button>
+                <button class="action-btn" onclick="clearAllLayers()">Clear All</button>
+                <button class="action-btn success" onclick="saveToCurrentMap()" style="margin-top: 15px;">
+                    Save to Current Map
+                </button>
+                <button class="action-btn" onclick="exportMap()" style="background: #4CAF50;">
+                    Export as New Map
+                </button>
+                <button class="action-btn" onclick="reloadMap()" style="background: #2196F3;">
+                    Reload Map
+                </button>
+            </div>
+        </div>
+
+        <div class="canvas-area">
+            <canvas id="map-canvas"></canvas>
+            <div class="coords-display" id="coords-display">X: -- Y: --</div>
+            <div class="instructions" id="instructions">Select a tool to begin editing</div>
+            <div class="status-bar">
+                <span id="status-text">Ready</span>
+                <span id="object-count">Objects: 0</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/editor';
+        
+        let mapInfo = null;
+        let mapImage = null;
+        let currentTool = null;
+        let drawingPoints = [];
+        let tempDrawing = null;
+        let layers = {};
+        
+        const canvas = document.getElementById('map-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Initialize
+        async function init() {
+            await loadMapInfo();
+            await loadLayers();
+            await loadMapPreview();
+            setupEventListeners();
+            updateStatus('Ready to edit');
+        }
+        
+        async function loadMapInfo() {
+            
+            // Display current map name
+            const mapPath = window.location.origin + '/maps/smr_map.pgm';
+            document.getElementById('map-name').textContent = 'smr_map.pgm (Active Navigation Map)';
+            const response = await fetch('/api/map');
+            const data = await response.json();
+            mapInfo = {
+                width: data.width,
+                height: data.height,
+                resolution: data.resolution,
+                origin: data.origin
+            };
+        }
+        
+        async function loadLayers() {
+            const response = await fetch(`${API_BASE}/layers`);
+            layers = await response.json();
+            updateObjectCount();
+        }
+        
+        async function loadMapPreview() {
+            const response = await fetch(`${API_BASE}/map/preview`);
+            const data = await response.json();
+            
+            const img = new Image();
+            img.onload = () => {
+                mapImage = img;
+                canvas.width = img.width;
+                canvas.height = img.height;
+                redrawCanvas();
+            };
+            img.src = `data:image/png;base64,${data.image}`;
+        }
+        
+        function redrawCanvas() {
+            if (!mapImage) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(mapImage, 0, 0);
+            
+            if (tempDrawing) {
+                drawTempObject(tempDrawing);
+            }
+        }
+        
+        function drawTempObject(obj) {
+            ctx.save();
+            ctx.strokeStyle = obj.color || '#ff0000';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([5, 5]);
+            
+            if (obj.type === 'rectangle') {
+                const width = obj.x2 - obj.x1;
+                const height = obj.y2 - obj.y1;
+                ctx.strokeRect(obj.x1, obj.y1, width, height);
+            } else if (obj.type === 'circle') {
+                const radius = Math.sqrt(Math.pow(obj.x2 - obj.x1, 2) + Math.pow(obj.y2 - obj.y1, 2));
+                ctx.beginPath();
+                ctx.arc(obj.x1, obj.y1, radius, 0, 2 * Math.PI);
+                ctx.stroke();
+            } else if (obj.type === 'polygon' && obj.points && obj.points.length > 0) {
+                ctx.fillStyle = obj.color ? obj.color + '40' : 'rgba(255, 0, 0, 0.2)';
+                ctx.beginPath();
+                ctx.moveTo(obj.points[0].x, obj.points[0].y);
+                for (let i = 1; i < obj.points.length; i++) {
+                    ctx.lineTo(obj.points[i].x, obj.points[i].y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                obj.points.forEach(p => {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
+                });
+            }
+            
+            ctx.restore();
+        }
+        
+        function pixelToWorld(px, py) {
+            const wx = mapInfo.origin[0] + px * mapInfo.resolution;
+            const wy = mapInfo.origin[1] + (mapInfo.height - py) * mapInfo.resolution;
+            return { x: wx, y: wy };
+        }
+        
+        function distance(x1, y1, x2, y2) {
+            return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        }
+        
+        function setupEventListeners() {
+            document.querySelectorAll('.tool-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentTool = btn.dataset.tool;
+                    drawingPoints = [];
+                    tempDrawing = null;
+                    updateInstructions();
+                });
+            });
+            
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('click', handleClick);
+            canvas.addEventListener('contextmenu', handleRightClick);
+        }
+        
+        function handleMouseMove(e) {
+            const rect = canvas.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+            const world = pixelToWorld(px, py);
+            
+            document.getElementById('coords-display').textContent = 
+                `X: ${world.x.toFixed(2)}m Y: ${world.y.toFixed(2)}m`;
+            
+            if (drawingPoints.length > 0) {
+                if (currentTool && (currentTool.includes('rect') || currentTool.includes('nogo') || 
+                    currentTool.includes('slow') || currentTool.includes('restricted'))) {
+                    tempDrawing = {
+                        type: 'rectangle',
+                        x1: drawingPoints[0].px,
+                        y1: drawingPoints[0].py,
+                        x2: px,
+                        y2: py,
+                        color: getToolColor()
+                    };
+                } else if (currentTool && currentTool.includes('circle')) {
+                    tempDrawing = {
+                        type: 'circle',
+                        x1: drawingPoints[0].px,
+                        y1: drawingPoints[0].py,
+                        x2: px,
+                        y2: py,
+                        color: getToolColor()
+                    };
+                } else if (currentTool && currentTool.includes('poly')) {
+                    tempDrawing = {
+                        type: 'polygon',
+                        points: [...drawingPoints.map(p => ({ x: p.px, y: p.py })), { x: px, y: py }],
+                        color: getToolColor()
+                    };
+                }
+                redrawCanvas();
+            }
+        }
+        
+        function handleClick(e) {
+            if (!currentTool) {
+                updateStatus('Select a tool first');
+                return;
+            }
+            
+            const rect = canvas.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+            const world = pixelToWorld(px, py);
+            
+            if (currentTool === 'measure') {
+                handleMeasure(px, py, world);
+            } else if (currentTool.includes('poly')) {
+                handlePolygonDraw(px, py, world);
+            } else {
+                handleShapeDraw(px, py, world);
+            }
+        }
+        
+        function handleRightClick(e) {
+            e.preventDefault();
+            if (currentTool && currentTool.includes('poly') && drawingPoints.length >= 3) {
+                finishPolygon();
+            }
+        }
+        
+        function handleShapeDraw(px, py, world) {
+            if (drawingPoints.length === 0) {
+                drawingPoints.push({ px, py, world });
+                updateStatus('Click again to finish shape');
+            } else {
+                const start = drawingPoints[0];
+                const layer = getLayerForTool();
+                
+                let obj = {};
+                if (currentTool.includes('rect') || currentTool.includes('nogo') || 
+                    currentTool.includes('slow') || currentTool.includes('restricted')) {
+                    obj = {
+                        type: 'rectangle',
+                        x1: Math.min(start.world.x, world.x),
+                        y1: Math.min(start.world.y, world.y),
+                        x2: Math.max(start.world.x, world.x),
+                        y2: Math.max(start.world.y, world.y)
+                    };
+                    
+                    if (currentTool === 'slow') {
+                        obj.speed_limit = parseFloat(document.getElementById('speed-limit').value);
+                    }
+                } else if (currentTool.includes('circle')) {
+                    obj = {
+                        type: 'circle',
+                        x: start.world.x,
+                        y: start.world.y,
+                        radius: distance(start.world.x, start.world.y, world.x, world.y)
+                    };
+                }
+                
+                addLayerObject(layer, obj);
+                drawingPoints = [];
+                tempDrawing = null;
+            }
+        }
+        
+        function handlePolygonDraw(px, py, world) {
+            drawingPoints.push({ px, py, world });
+            updateStatus(`Polygon: ${drawingPoints.length} points (right-click to finish)`);
+        }
+        
+        async function finishPolygon() {
+            if (drawingPoints.length < 3) return;
+            
+            const layer = getLayerForTool();
+            const obj = {
+                type: 'polygon',
+                points: drawingPoints.map(p => ({ x: p.world.x, y: p.world.y }))
+            };
+            
+            await addLayerObject(layer, obj);
+            drawingPoints = [];
+            tempDrawing = null;
+        }
+        
+        function handleMeasure(px, py, world) {
+            if (drawingPoints.length === 0) {
+                drawingPoints.push({ px, py, world });
+                updateStatus('Click second point');
+            } else {
+                const start = drawingPoints[0];
+                const dist = distance(start.world.x, start.world.y, world.x, world.y);
+                const resultDiv = document.getElementById('measurement-result');
+                resultDiv.textContent = `Distance: ${dist.toFixed(3)}m`;
+                resultDiv.style.display = 'block';
+                drawingPoints = [];
+                updateStatus('Measurement complete');
+            }
+        }
+        
+        function getLayerForTool() {
+            if (currentTool.includes('obstacle')) return 'obstacles';
+            if (currentTool.includes('nogo')) return 'no_go_zones';
+            if (currentTool.includes('slow')) return 'slow_zones';
+            if (currentTool.includes('restricted')) return 'restricted';
+            return 'obstacles';
+        }
+        
+        function getToolColor() {
+            if (currentTool.includes('obstacle')) return '#000000';
+            if (currentTool.includes('nogo')) return '#ff0000';
+            if (currentTool.includes('slow')) return '#ffff00';
+            if (currentTool.includes('restricted')) return '#ffa500';
+            return '#000000';
+        }
+        
+        async function addLayerObject(layer, obj) {
+            const response = await fetch(`${API_BASE}/layer/add`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ layer, object: obj })
+            });
+            
+            if (response.ok) {
+                await loadLayers();
+                await loadMapPreview();
+                updateObjectCount();
+                updateStatus('Object added');
+            }
+        }
+        
+        async function clearLayer(layer) {
+            if (!confirm(`Clear all ${layer.replace('_', ' ')}?`)) return;
+            
+            const response = await fetch(`${API_BASE}/layer/clear`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ layer })
+            });
+            
+            if (response.ok) {
+                await loadLayers();
+                await loadMapPreview();
+                updateStatus(`Cleared ${layer}`);
+            }
+        }
+        
+        async function clearAllLayers() {
+            if (!confirm('Clear ALL layers?')) return;
+            
+            for (const layer of Object.keys(layers)) {
+                await clearLayer(layer);
+            }
+        }
+        
+        async function exportMap() {
+            const defaultName = 'edited_map_' + new Date().toISOString().slice(0,10).replace(/-/g, '');
+            const baseName = prompt('Enter map name (without extension):', defaultName);
+            if (!baseName) return;
+            
+            updateStatus('Exporting...');
+            const path = `/tmp/${baseName}.pgm`;
+            const response = await fetch(`${API_BASE}/map/export`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                
+                // Download both PGM and YAML files
+                const pgmFilename = `${baseName}.pgm`;
+                const yamlFilename = `${baseName}.yaml`;
+                
+                // Download PGM
+                const aPgm = document.createElement('a');
+                aPgm.href = `/api/map/download/${pgmFilename}`;
+                aPgm.download = pgmFilename;
+                document.body.appendChild(aPgm);
+                aPgm.click();
+                document.body.removeChild(aPgm);
+                
+                // Download YAML after a short delay
+                setTimeout(() => {
+                    const aYaml = document.createElement('a');
+                    aYaml.href = `/api/map/download/${yamlFilename}`;
+                    aYaml.download = yamlFilename;
+                    document.body.appendChild(aYaml);
+                    aYaml.click();
+                    document.body.removeChild(aYaml);
+                }, 500);
+                
+                updateStatus('Export complete - downloading files...');
+                alert(`✓ Map exported!\n\nDownloading:\n• ${pgmFilename}\n• ${yamlFilename}\n\nYou can now use this map in Nav2!`);
+            } else {
+                updateStatus('Export failed');
+                alert('Failed to export map');
+            }
+        }
+        
+        async function saveToCurrentMap() {
+            if (!confirm('⚠️ SAVE TO NAVIGATION MAP\n\n' +
+                '✓ Obstacles → Baked into map PGM (permanent walls)\n' +
+                '✓ No-Go Zones → Exported as Nav2 keepout filters\n' +
+                '✓ Restricted Areas → Exported as Nav2 keepout filters\n' +
+                '✓ Slow Zones → Exported as speed limit zones\n\n' +
+                'A backup will be created.\n' +
+                'You must RESTART Nav2 for changes to take effect.\n\n' +
+                'Continue?')) {
+                return;
+            }
+            
+            updateStatus('Saving to current map...');
+            const response = await fetch(`${API_BASE}/map/save_current`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                alert(`✓ MAP SAVED!\n\n` +
+                    `${result.message}\n\n` +
+                    `Map file: ${result.map_path}\n` +
+                    `Keepout zones: /maps/keepout_zones.yaml\n` +
+                    `Speed zones: /maps/speed_zones.yaml\n\n` +
+                    `⚠️ RESTART Nav2 to load the updated map!\n\n` +
+                    `The robot will now avoid no-go zones and\n` +
+                    `respect speed limits in slow zones.`);
+                updateStatus('Saved to current map');
+            } else {
+                alert('❌ Failed to save map');
+                updateStatus('Save failed');
+            }
+        }
+        
+        async function reloadMap() {
+            updateStatus('Reloading map...');
+            const response = await fetch(`${API_BASE}/map/reload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            if (response.ok) {
+                await loadMapPreview();
+                updateStatus('Map reloaded');
+            }
+        }
+        
+        function updateInstructions() {
+            const messages = {
+                'obstacle-rect': 'Click two points to draw obstacle rectangle',
+                'obstacle-circle': 'Click center, then radius point',
+                'obstacle-poly': 'Click points, right-click to finish',
+                'nogo': 'Click two corners for no-go zone',
+                'slow': 'Click two corners for slow zone',
+                'restricted': 'Click two corners for restricted area',
+                'measure': 'Click two points to measure'
+            };
+            
+            document.getElementById('instructions').textContent = 
+                messages[currentTool] || 'Select a tool';
+        }
+        
+        function updateStatus(text) {
+            document.getElementById('status-text').textContent = text;
+        }
+        
+        function updateObjectCount() {
+            const total = Object.values(layers).reduce((sum, arr) => sum + arr.length, 0);
+            document.getElementById('object-count').textContent = `Objects: ${total}`;
+        }
+        
+        init();
+    </script>
+</body>
+</html>

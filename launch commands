@@ -26,5 +26,6 @@ colcon build --symlink-install --base-paths src/zone_nav
 
 ros2 launch my_bot zone_nav_ui.launch.py
 
+ros2 launch my_bot mode_switcher.launch.py
 
 colcon build --symlink-install --base-paths . src

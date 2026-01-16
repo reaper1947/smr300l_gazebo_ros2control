@@ -1948,11 +1948,11 @@
             // Draw lidar scan points
             if (laserScan && laserScan.length > 0) {
                 ctx.save();
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.9)';
                 for (const point of laserScan) {
                     const [px, py] = worldToPixel(point.x, point.y);
                     ctx.beginPath();
-                    ctx.arc(px, py, 3.5, 0, 2 * Math.PI);
+                    ctx.arc(px, py, 4.5, 0, 2 * Math.PI);
                     ctx.fill();
                 }
                 ctx.restore();

@@ -23,7 +23,7 @@ class SafetyController(Node):
         super().__init__('safety_controller')
         
         # Publisher for safety commands (highest priority in twist_mux)
-        self.safety_pub = self.create_publisher(Twist, '/cmd_vel_safety', 10)
+        self.safety_pub = self.create_publisher(Twist, 'cmd_vel_safety', 10)
         
         # Safety state
         self.estop_active = False
@@ -36,9 +36,18 @@ class SafetyController(Node):
         self.confidence_threshold = 30.0
         self.confidence_resume_threshold = 35.0
         
-        # Obstacle detection
-        self.safety_radius = 0.35  # meters - minimum clearance
-        self.min_obstacle_distance = float('inf')
+        # Obstacle detection - using research-based distance thresholds
+        # Paper: "Detection and Classification of Obstacles Using a 2D LiDAR Sensor"
+        self.critical_zone = 0.35   # < 0.35m = CRITICAL - immediate stop
+        self.warning_zone = 0.60    # 0.35-0.60m = WARNING - slow down
+        self.safe_zone = 1.0        # 0.60-1.0m = SAFE - monitor
+        
+        self.min_obstacle_distance_front = float('inf')
+        self.min_obstacle_distance_rear = float('inf')
+        self.critical_obstacles_front = 0
+        self.critical_obstacles_rear = 0
+        self.warning_obstacles_front = 0
+        self.warning_obstacles_rear = 0
         
         # Subscribe to AMCL pose with correct QoS
         qos = QoSProfile(
@@ -54,13 +63,23 @@ class SafetyController(Node):
             qos
         )
         
-        # Subscribe to lidar
-        self.scan_sub = self.create_subscription(
+        # Subscribe to BOTH front and rear lidars
+        self.scan_front_sub = self.create_subscription(
             LaserScan,
             '/scan',
-            self.scan_callback,
+            self.scan_front_callback,
             10
         )
+        
+        self.scan_rear_sub = self.create_subscription(
+            LaserScan,
+            '/scan2',
+            self.scan_rear_callback,
+            10
+        )
+        
+        self.get_logger().info('📡 Monitoring FRONT lidar: /scan')
+        self.get_logger().info('📡 Monitoring REAR lidar: /scan2')
         
         # Services
         self.estop_srv = self.create_service(SetBool, 'safety/emergency_stop', self.estop_callback)
@@ -100,25 +119,93 @@ class SafetyController(Node):
                 self.low_confidence_stop = False
                 self.get_logger().info(f'✓ Confidence restored ({self.localization_confidence:.1f}%) - safety clear')
     
-    def scan_callback(self, msg):
-        """Monitor obstacles from LIDAR"""
+    def scan_front_callback(self, msg):
+        """Monitor obstacles from FRONT LIDAR (/scan) using distance classification"""
         min_dist = float('inf')
+        critical_count = 0
+        warning_count = 0
         
+        # Analyze each distance reading
         for i, distance in enumerate(msg.ranges):
             if msg.range_min < distance < msg.range_max:
                 min_dist = min(min_dist, distance)
+                
+                # Classify obstacle by distance (research-based zones)
+                if distance < self.critical_zone:
+                    critical_count += 1
+                elif distance < self.warning_zone:
+                    warning_count += 1
         
-        self.min_obstacle_distance = min_dist
+        self.min_obstacle_distance_front = min_dist
+        self.critical_obstacles_front = critical_count
+        self.warning_obstacles_front = warning_count
         
-        # Check if obstacle too close
-        if min_dist < self.safety_radius:
+        # CRITICAL ZONE: Immediate stop if multiple critical obstacles detected
+        # Using threshold: > 3 points in critical zone = real obstacle (not noise)
+        if critical_count > 3:
             if not self.obstacle_stop:
                 self.obstacle_stop = True
-                self.get_logger().warn(f'⚠️  SAFETY: Obstacle detected at {min_dist:.2f}m (< {self.safety_radius}m) - stopping robot')
-        elif min_dist > self.safety_radius + 0.1:  # Hysteresis
-            if self.obstacle_stop:
+                self.get_logger().warn(
+                    f'🚨 SAFETY STOP: FRONT obstacle CRITICAL at {min_dist:.2f}m '
+                    f'({critical_count} points < {self.critical_zone}m)'
+                )
+        # Clear stop only if well outside critical zone (hysteresis)
+        elif min_dist > self.critical_zone + 0.15:
+            if self.obstacle_stop and self.critical_obstacles_rear <= 3:
                 self.obstacle_stop = False
-                self.get_logger().info(f'✓ Obstacle cleared ({min_dist:.2f}m) - safety clear')
+                self.get_logger().info(f'✓ FRONT obstacle cleared ({min_dist:.2f}m)')
+        
+        # Log warnings for warning zone
+        if warning_count > 5 and critical_count <= 3:
+            if int(self.get_clock().now().nanoseconds / 1e9) % 3 == 0:
+                self.get_logger().debug(
+                    f'⚠️  WARNING: FRONT obstacles at {min_dist:.2f}m '
+                    f'({warning_count} points in warning zone)'
+                )
+    
+    def scan_rear_callback(self, msg):
+        """Monitor obstacles from REAR LIDAR (/scan2) using distance classification"""
+        min_dist = float('inf')
+        critical_count = 0
+        warning_count = 0
+        
+        # Analyze each distance reading
+        for i, distance in enumerate(msg.ranges):
+            if msg.range_min < distance < msg.range_max:
+                min_dist = min(min_dist, distance)
+                
+                # Classify obstacle by distance (research-based zones)
+                if distance < self.critical_zone:
+                    critical_count += 1
+                elif distance < self.warning_zone:
+                    warning_count += 1
+        
+        self.min_obstacle_distance_rear = min_dist
+        self.critical_obstacles_rear = critical_count
+        self.warning_obstacles_rear = warning_count
+        
+        # CRITICAL ZONE: Immediate stop if multiple critical obstacles detected
+        # Using threshold: > 3 points in critical zone = real obstacle (not noise)
+        if critical_count > 3:
+            if not self.obstacle_stop:
+                self.obstacle_stop = True
+                self.get_logger().warn(
+                    f'🚨 SAFETY STOP: REAR obstacle CRITICAL at {min_dist:.2f}m '
+                    f'({critical_count} points < {self.critical_zone}m)'
+                )
+        # Clear stop only if well outside critical zone (hysteresis)
+        elif min_dist > self.critical_zone + 0.15:
+            if self.obstacle_stop and self.critical_obstacles_front <= 3:
+                self.obstacle_stop = False
+                self.get_logger().info(f'✓ REAR obstacle cleared ({min_dist:.2f}m)')
+        
+        # Log warnings for warning zone
+        if warning_count > 5 and critical_count <= 3:
+            if int(self.get_clock().now().nanoseconds / 1e9) % 3 == 0:
+                self.get_logger().debug(
+                    f'⚠️  WARNING: REAR obstacles at {min_dist:.2f}m '
+                    f'({warning_count} points in warning zone)'
+                )
     
     def safety_check_callback(self):
         """Continuously check safety and publish stop commands if needed"""
@@ -135,7 +222,10 @@ class SafetyController(Node):
         
         if self.obstacle_stop:
             should_stop = True
-            reasons.append(f'OBSTACLE({self.min_obstacle_distance:.2f}m)')
+            front_status = f'F:{self.critical_obstacles_front}crit' if self.critical_obstacles_front > 3 else ''
+            rear_status = f'R:{self.critical_obstacles_rear}crit' if self.critical_obstacles_rear > 3 else ''
+            obstacle_details = ', '.join(filter(None, [front_status, rear_status]))
+            reasons.append(f'OBSTACLE({obstacle_details})')
         
         # Publish stop command if any safety condition is active
         if should_stop:
@@ -188,7 +278,16 @@ class SafetyController(Node):
             f"",
             f"Sensors:",
             f"  Localization: {self.localization_confidence:.1f}% (threshold: {self.confidence_threshold}%)",
-            f"  Nearest Obstacle: {self.min_obstacle_distance:.2f}m (safety: {self.safety_radius}m)"
+            f"",
+            f"Obstacle Detection (Research-Based Zones):",
+            f"  FRONT Lidar (/scan):",
+            f"    Nearest: {self.min_obstacle_distance_front:.2f}m",
+            f"    Critical (<{self.critical_zone}m): {self.critical_obstacles_front} points",
+            f"    Warning ({self.critical_zone}-{self.warning_zone}m): {self.warning_obstacles_front} points",
+            f"  REAR Lidar (/scan2):",
+            f"    Nearest: {self.min_obstacle_distance_rear:.2f}m",
+            f"    Critical (<{self.critical_zone}m): {self.critical_obstacles_rear} points",
+            f"    Warning ({self.critical_zone}-{self.warning_zone}m): {self.warning_obstacles_rear} points"
         ]
         
         response.success = True

@@ -1,0 +1,8 @@
+# Service to upload a new map
+string map_name                # Name for the map (without extension)
+string yaml_content            # Content of the YAML file
+string pgm_base64              # Base64 encoded PGM image data
+---
+bool success
+string message
+string map_path                # Full path to the saved map YAML

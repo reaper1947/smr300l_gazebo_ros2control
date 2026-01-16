@@ -20,6 +20,7 @@ x`slam_toolbox:
     scan_topic: /scan
     use_map_saver: true
 <<<<<<< HEAD
+<<<<<<< HEAD
     #mode: mapping
     mode:  localization
 
@@ -32,6 +33,9 @@ x`slam_toolbox:
 
 =======
     mode: localization
+=======
+    mode: mapping
+>>>>>>> 09e677c (Proper Commit From Right Account :))
     map_start_at_dock: false
     map_file_name: ""
     initial_pose_x: 0.0
