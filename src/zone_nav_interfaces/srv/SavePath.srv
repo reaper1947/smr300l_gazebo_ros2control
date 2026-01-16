@@ -1,0 +1,6 @@
+string name
+float32[] x_coords
+float32[] y_coords
+---
+bool ok
+string message

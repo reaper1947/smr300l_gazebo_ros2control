@@ -1,0 +1,4 @@
+string[] zone_names
+---
+bool ok
+string message

@@ -1,0 +1,4 @@
+bool activate
+---
+bool ok
+string message

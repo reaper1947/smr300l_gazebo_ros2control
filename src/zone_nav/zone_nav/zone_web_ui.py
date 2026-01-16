@@ -6,7 +6,12 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from zone_nav_interfaces.srv import SaveZone, GoToZone
+from zone_nav_interfaces.srv import (
+    SaveZone, DeleteZone, UpdateZoneParams, ReorderZones,
+    SavePath, DeletePath, SaveLayout, LoadLayout, DeleteLayout,
+    SetMaxSpeed, SetControlMode, SetSafetyOverride, SetEStop
+)
+from zone_nav_interfaces.action import GoToZone as GoToZoneAction, FollowPath as FollowPathAction
 from nav2_msgs.action import NavigateToPose
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist, TransformStamped
 from nav_msgs.msg import Path
@@ -45,7 +50,18 @@ class ZoneWebServer(Node):
         
         # Service clients
         self.save_zone_client = self.create_client(SaveZone, '/save_zone')
-        self.go_to_zone_client = self.create_client(GoToZone, '/go_to_zone')
+        self.delete_zone_client = self.create_client(DeleteZone, '/delete_zone')
+        self.update_zone_params_client = self.create_client(UpdateZoneParams, '/update_zone_params')
+        self.reorder_zones_client = self.create_client(ReorderZones, '/reorder_zones')
+        self.save_path_client = self.create_client(SavePath, '/save_path')
+        self.delete_path_client = self.create_client(DeletePath, '/delete_path')
+        self.save_layout_client = self.create_client(SaveLayout, '/save_layout')
+        self.load_layout_client = self.create_client(LoadLayout, '/load_layout')
+        self.delete_layout_client = self.create_client(DeleteLayout, '/delete_layout')
+        self.set_max_speed_client = self.create_client(SetMaxSpeed, '/set_max_speed')
+        self.set_control_mode_client = self.create_client(SetControlMode, '/set_control_mode')
+        self.set_safety_override_client = self.create_client(SetSafetyOverride, '/set_safety_override')
+        self.set_estop_client = self.create_client(SetEStop, '/set_estop')
         
         # Publisher for goal poses
         self.goal_pub = self.create_publisher(PoseStamped, '/goal_pose', 10)
@@ -74,6 +90,21 @@ class ZoneWebServer(Node):
             callback_group=self.cb_group
         )
         self.current_nav_goal_handle = None
+
+        # Action clients for high-level navigation
+        self.go_to_zone_action_client = ActionClient(
+            self,
+            GoToZoneAction,
+            '/go_to_zone',
+            callback_group=self.cb_group
+        )
+
+        self.follow_path_action_client = ActionClient(
+            self,
+            FollowPathAction,
+            '/follow_path',
+            callback_group=self.cb_group
+        )
         
         # Timer for continuous safety stop commands
         self.safety_stop_timer = None
@@ -82,8 +113,8 @@ class ZoneWebServer(Node):
         self.estop_timer = None
         
         # Safety parameters
-        self.confidence_threshold = 30.0  # Stop if confidence drops below this
-        self.confidence_resume_threshold = 35.0  # Resume when confidence goes above this (hysteresis)
+        self.confidence_threshold = 10.0  # Stop if confidence drops below this
+        self.confidence_resume_threshold = 11.0  # Resume when confidence goes above this (hysteresis)
         self.safety_stop_active = False
         self.safety_override_active = False  # Manual override flag
         self.last_confidence_warning = 0.0
@@ -171,7 +202,7 @@ class ZoneWebServer(Node):
         self.map_path = os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps/smr_map.yaml')
         self.zones_file = os.path.expanduser('~/zones.yaml')
         self.paths_file = os.path.expanduser('~/paths.yaml')
-        self.layouts_file = os.path.expanduser('~/layouts.yawml')
+        self.layouts_file = os.path.expanduser('~/layouts.yaml')
         self.current_layout = None  # Track active layout
         self.map_info = self.load_map_info()
         
@@ -476,6 +507,10 @@ class ZoneWebServer(Node):
         self.cmd_vel_safety_pub.publish(stop_msg)
         
         # Cancel any active Nav2 navigation goals
+        if self.path_following_active:
+            self.stop_path_following(save_state=True)
+        if self.sequence_active:
+            self.stop_sequence(save_state=True)
         if self.current_nav_goal_handle is not None:
             try:
                 self.get_logger().warn('Canceling active navigation goal due to low confidence')
@@ -719,7 +754,6 @@ class ZoneWebServer(Node):
                 self.get_logger().error(f'Failed to load mission state: {e}')
                 return {'active': False}
         return {'active': False}
-    '\='
     def clear_mission_state(self):
         """Clear saved mission state after completion or cancellation"""
         self.mission_state = {
@@ -751,19 +785,18 @@ class ZoneWebServer(Node):
         self.get_logger().info(f'Resuming {mission_type} mission from progress {progress} (interrupted by: {interrupted_by})')
         
         if mission_type == 'path':
-            # Resume path following
-            self.path_waypoints = mission_data
-            self.current_waypoint_index = progress
-            self.path_following_active = True
-            self._send_path_waypoint_goal()
-            return {'ok': True, 'message': f'Resuming path following from waypoint {progress + 1}/{len(mission_data)}', 'type': 'path'}
+            # Resume path following from remaining waypoints
+            remaining_points = mission_data[progress:]
+            if not remaining_points:
+                return {'ok': False, 'message': 'No remaining waypoints to resume'}
+            return self.follow_drawn_path(remaining_points)
         
         elif mission_type == 'sequence':
             # Resume sequence navigation
             self.sequence_zones = mission_data
             self.current_sequence_index = progress
             self.sequence_active = True
-            self._navigate_to_next_zone_in_sequence()
+            self._send_sequence_zone_goal()
             return {'ok': True, 'message': f'Resuming sequence from zone {progress + 1}/{len(mission_data)}', 'type': 'sequence'}
         
         elif mission_type == 'zone':
@@ -1065,6 +1098,61 @@ class ZoneWebServer(Node):
             self.get_logger().error(f'Failed to export speed zones: {e}')
     
     def delete_zone(self, name):
+        """Call DeleteZone service"""
+        if not self.delete_zone_client.wait_for_service(timeout_sec=1.0):
+            return {'ok': False, 'message': 'DeleteZone service not available'}
+        
+        request = DeleteZone.Request()
+        request.name = name
+        future = self.delete_zone_client.call_async(request)
+        
+        try:
+            # Wait for result with timeout
+            result = future.result(timeout_sec=5.0)
+            return {'ok': result.ok, 'message': result.message}
+        except Exception as e:
+            return {'ok': False, 'message': f'Service call failed: {str(e)}'}
+    
+    
+    def update_zone_params(self, name, zone_type='normal', speed=0.5, action='', charge_duration=0):
+        """Call UpdateZoneParams service"""
+        if not self.update_zone_params_client.wait_for_service(timeout_sec=1.0):
+            return {'ok': False, 'message': 'UpdateZoneParams service not available'}
+        
+        request = UpdateZoneParams.Request()
+        request.name = name
+        request.type = zone_type
+        request.speed = speed
+        request.action = action
+        request.charge_duration = charge_duration
+        future = self.update_zone_params_client.call_async(request)
+        
+        try:
+            result = future.result(timeout_sec=5.0)
+            return {'ok': result.ok, 'message': result.message}
+        except Exception as e:
+            return {'ok': False, 'message': f'Service call failed: {str(e)}'}
+    
+    def reorder_zones_service(self, zone_names):
+        """Call ReorderZones service"""
+        service_ready = False
+        for attempt in range(5):
+            if self.reorder_zones_client.wait_for_service(timeout_sec=2.0):
+                service_ready = True
+                break
+            self.get_logger().warn(f'ReorderZones service not available yet (attempt {attempt + 1}/5)')
+        if not service_ready:
+            return {'ok': False, 'message': 'ReorderZones service not available'}
+        
+        request = ReorderZones.Request()
+        request.zone_names = zone_names
+        future = self.reorder_zones_client.call_async(request)
+        
+        try:
+            result = future.result(timeout_sec=5.0)
+            return {'ok': result.ok, 'message': result.message}
+        except Exception as e:
+            return {'ok': False, 'message': f'Service call failed: {str(e)}'}
         """Delete a zone from the zones file"""
         try:
             zones = self.load_zones()
@@ -1086,6 +1174,20 @@ class ZoneWebServer(Node):
             self.get_logger().error(f'Failed to delete zone: {e}')
             return {'ok': False, 'message': f'Error deleting zone: {str(e)}'}
     
+    def reorder_zones(self, reordered_zones):
+        """Reorder zones by saving them in the new order"""
+        try:
+            # Save zones with the new order
+            with open(self.zones_file, 'w') as f:
+                yaml.dump({'zones': reordered_zones}, f, default_flow_style=False)
+            
+            self.get_logger().info(f'Zones reordered successfully')
+            return {'ok': True, 'message': 'Zones reordered successfully'}
+            
+        except Exception as e:
+            self.get_logger().error(f'Failed to reorder zones: {e}')
+            return {'ok': False, 'message': f'Error reordering zones: {str(e)}'}
+    
     def force_resume_navigation(self):
         """Manually override safety stop and resume navigation"""
         if self.safety_stop_active:
@@ -1103,7 +1205,7 @@ class ZoneWebServer(Node):
             return {'ok': False, 'message': 'Safety stop is not active'}
     
     def follow_drawn_path(self, path_points):
-        """Follow a drawn path by navigating through waypoints sequentially"""
+        """Follow a drawn path using the FollowPath action server"""
         # Block if e-stop is latched
         if self.estop_active:
             return {'ok': False, 'message': '🛑 E-STOP ACTIVE. Reset before following a path.'}
@@ -1128,76 +1230,100 @@ class ZoneWebServer(Node):
         # Check safety
         if self.safety_stop_active and not self.safety_override_active:
             return {'ok': False, 'message': f'Cannot navigate: Localization confidence too low ({self.localization_confidence:.1f}%). Improve robot localization first or use "Force Resume".'}
+
+        # Wait for action server
+        if not self.follow_path_action_client.wait_for_server(timeout_sec=5.0):
+            return {'ok': False, 'message': 'FollowPath action server not available'}
+        
+        # Build PoseStamped waypoints with simple heading toward next point
+        import math
+        waypoints = []
+        for idx, point in enumerate(path_points):
+            pose = PoseStamped()
+            pose.header.frame_id = 'map'
+            pose.header.stamp = self.get_clock().now().to_msg()
+            pose.pose.position.x = float(point['x'])
+            pose.pose.position.y = float(point['y'])
+            pose.pose.position.z = 0.0
+
+            if idx < len(path_points) - 1:
+                next_point = path_points[idx + 1]
+                dx = next_point['x'] - point['x']
+                dy = next_point['y'] - point['y']
+                theta = math.atan2(dy, dx)
+            else:
+                theta = 0.0
+
+            pose.pose.orientation.x = 0.0
+            pose.pose.orientation.y = 0.0
+            pose.pose.orientation.z = math.sin(theta / 2.0)
+            pose.pose.orientation.w = math.cos(theta / 2.0)
+            waypoints.append(pose)
         
         self.path_following_active = True
         self.path_waypoints = path_points
         self.current_waypoint_index = 0
-        
-        # Save initial mission state
         self.save_mission_state('path', path_points, 0, None)
         
-        self.get_logger().info(f'🚀 Starting path following with {len(path_points)} waypoints')
-        self.get_logger().info(f'📍 Waypoints: {[(p["x"], p["y"]) for p in path_points]}')
-        
-        # Navigate to first waypoint
-        self.get_logger().info(f'🎯 Calling _send_path_waypoint_goal() for waypoint 0')
-        self._send_path_waypoint_goal()
+        goal_msg = FollowPathAction.Goal()
+        goal_msg.waypoints = waypoints
+
+        self.get_logger().info(f'🚀 Sending FollowPath action with {len(waypoints)} waypoints')
+        send_goal_future = self.follow_path_action_client.send_goal_async(
+            goal_msg,
+            feedback_callback=self._follow_path_feedback_callback
+        )
+        send_goal_future.add_done_callback(self._follow_path_goal_response_callback)
         
         return {'ok': True, 'message': f'Path following started: {len(path_points)} waypoints'}
     
-    def _send_path_waypoint_goal(self):
-        """Send goal for current waypoint"""
-        import math
-        
-        self.get_logger().info(f'🔵 _send_path_waypoint_goal CALLED - index={self.current_waypoint_index}, active={self.path_following_active}, total_waypoints={len(self.path_waypoints) if self.path_waypoints else 0}')
-        
-        if not self.path_following_active or self.current_waypoint_index >= len(self.path_waypoints):
-            self.get_logger().warn(f'⚠️ Aborting goal send: active={self.path_following_active}, index={self.current_waypoint_index}, total={len(self.path_waypoints) if self.path_waypoints else 0}')
+    def _follow_path_goal_response_callback(self, future):
+        try:
+            goal_handle = future.result()
+        except Exception as e:
+            self.get_logger().error(f'FollowPath goal dispatch failed: {e}')
+            self.path_following_active = False
             return
-        
-        point = self.path_waypoints[self.current_waypoint_index]
-        
-        self.get_logger().info(f'📤 Sending goal for waypoint {self.current_waypoint_index + 1}/{len(self.path_waypoints)} at ({point["x"]:.2f}, {point["y"]:.2f})')
-        
-        # Wait for Nav2 action server
-        self.get_logger().info(f'⏳ Waiting for Nav2 action server...')
-        if not self.nav_action_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error('❌ Nav2 action server not available after 5s timeout!')
-            self.stop_path_following()
+
+        if not goal_handle.accepted:
+            self.get_logger().error('FollowPath goal rejected by server')
+            self.path_following_active = False
             return
-        self.get_logger().info(f'✓ Nav2 action server ready')
-        
-        # Calculate orientation to next point
-        if self.current_waypoint_index < len(self.path_waypoints) - 1:
-            next_point = self.path_waypoints[self.current_waypoint_index + 1]
-            dx = next_point['x'] - point['x']
-            dy = next_point['y'] - point['y']
-            theta = math.atan2(dy, dx)
+
+        self.path_goal_handle = goal_handle
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(self._follow_path_result_callback)
+
+    def _follow_path_feedback_callback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+        self.current_waypoint_index = feedback.current_index
+        status_note = feedback.status if feedback.status else 'Navigating'
+        self.get_logger().info(f'Path feedback: {status_note} ({feedback.current_index + 1}/{feedback.total})')
+        # Persist progress so resume works
+        if self.path_following_active:
+            self.save_mission_state('path', self.path_waypoints, feedback.current_index, None)
+
+    def _follow_path_result_callback(self, future):
+        self.path_goal_handle = None
+        try:
+            result = future.result()
+            action_result = result.result
+            status = result.status
+        except Exception as e:
+            self.get_logger().error(f'FollowPath action failed: {e}')
+            self.path_following_active = False
+            return
+
+        if action_result.success:
+            self.get_logger().info(f'🎉 Path complete! {action_result.completed} waypoints reached')
+            self.clear_mission_state()
         else:
-            theta = 0.0
-        
-        # Create and send goal message
-        goal_msg = NavigateToPose.Goal()
-        goal_msg.pose.header.frame_id = 'map'
-        goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
-        goal_msg.pose.pose.position.x = float(point['x'])
-        goal_msg.pose.pose.position.y = float(point['y'])
-        goal_msg.pose.pose.position.z = 0.0
-        goal_msg.pose.pose.orientation.x = 0.0
-        goal_msg.pose.pose.orientation.y = 0.0
-        goal_msg.pose.pose.orientation.z = math.sin(theta / 2.0)
-        goal_msg.pose.pose.orientation.w = math.cos(theta / 2.0)
-        
-        # Send goal async with feedback
-        self.get_logger().info(f'📡 Calling send_goal_async() for waypoint {self.current_waypoint_index + 1}')
-        send_goal_future = self.nav_action_client.send_goal_async(
-            goal_msg,
-            feedback_callback=None
-        )
-        self.get_logger().info(f'🔗 Adding response callback for waypoint {self.current_waypoint_index + 1}')
-        send_goal_future.add_done_callback(self._path_goal_response_callback)
-        self.get_logger().info(f'✅ Goal sent for waypoint {self.current_waypoint_index + 1}, waiting for acceptance...')
-    
+            self.get_logger().error(f'FollowPath failed (status={status}): {action_result.message}')
+
+        self.path_following_active = False
+        self.path_waypoints = []
+        self.current_waypoint_index = 0
+
     def stop_path_following(self, save_state=False):
         """Stop the current path following"""
         if not self.path_following_active:
@@ -1208,77 +1334,22 @@ class ZoneWebServer(Node):
             self.save_mission_state('path', self.path_waypoints, self.current_waypoint_index, 'manual')
         
         self.path_following_active = False
-        self.path_waypoints = []
-        self.current_waypoint_index = 0
         
-        # Cancel active navigation goal
         if self.path_goal_handle is not None:
             try:
                 self.path_goal_handle.cancel_goal_async()
                 self.path_goal_handle = None
             except Exception as e:
-                self.get_logger().error(f'Failed to cancel path goal: {e}')
+                self.get_logger().error(f'Failed to cancel FollowPath goal: {e}')
+        
+        self.path_waypoints = []
+        self.current_waypoint_index = 0
         
         self.get_logger().info('Path following stopped')
         return {'ok': True, 'message': 'Path following stopped'}
     
-    def _path_goal_response_callback(self, future):
-        """Handle Nav2 goal acceptance for path waypoint"""
-        self.get_logger().info(f'🟢 _path_goal_response_callback CALLED for waypoint {self.current_waypoint_index + 1}')
-        
-        goal_handle = future.result()
-        
-        if not goal_handle.accepted:
-            self.get_logger().error(f'❌ Path waypoint {self.current_waypoint_index + 1} goal REJECTED. Stopping.')
-            self.stop_path_following()
-            return
-        
-        self.path_goal_handle = goal_handle
-        self.get_logger().info(f'✓ Waypoint {self.current_waypoint_index + 1} goal ACCEPTED')
-        
-        # Wait for result
-        self.get_logger().info(f'🔗 Adding result callback for waypoint {self.current_waypoint_index + 1}')
-        result_future = goal_handle.get_result_async()
-        result_future.add_done_callback(self._path_result_callback)
-        self.get_logger().info(f'⏳ Waiting for waypoint {self.current_waypoint_index + 1} completion...')
-    
-    def _path_result_callback(self, future):
-        """Handle completion of a waypoint"""
-        self.get_logger().info(f'🟣 _path_result_callback CALLED - current_index={self.current_waypoint_index}, active={self.path_following_active}')
-        
-        if not self.path_following_active:
-            self.get_logger().warn(f'⚠️ Result callback fired but path_following_active=False, ignoring')
-            return
-        
-        try:
-            result = future.result()
-            self.get_logger().info(f'📊 Result status={result.status} (4=SUCCEEDED) for waypoint {self.current_waypoint_index + 1}')
-            
-            if result.status == 4:  # SUCCEEDED
-                self.get_logger().info(f'✓ SUCCEEDED: Reached waypoint {self.current_waypoint_index + 1}/{len(self.path_waypoints)}')
-                
-                old_index = self.current_waypoint_index
-                self.current_waypoint_index += 1
-                self.get_logger().info(f'📈 Incremented waypoint index: {old_index} -> {self.current_waypoint_index}')
-                
-                if self.current_waypoint_index >= len(self.path_waypoints):
-                    self.get_logger().info(f'🎉 Path complete! Reached all {len(self.path_waypoints)} waypoints')
-                    self.clear_mission_state()  # Clear saved state on successful completion
-                    self.path_following_active = False
-                    self.path_waypoints = []
-                    self.current_waypoint_index = 0
-                else:
-                    # Send next waypoint immediately
-                    self._send_path_waypoint_goal()
-            else:
-                self.get_logger().error(f'Waypoint failed')
-                self.stop_path_following()
-        except Exception as e:
-            self.get_logger().error(f'Path error: {e}')
-            self.stop_path_following()
-    
-    def save_zone(self, name, x, y, theta):
-        """Call save_zone service"""
+    def save_zone(self, name, x, y, theta, zone_type='normal', speed=0.5, action=None, charge_duration=None):
+        """Call save_zone service and store zone metadata"""
         if not self.save_zone_client.wait_for_service(timeout_sec=1.0):
             return {'ok': False, 'message': 'Save zone service not available'}
         
@@ -1311,6 +1382,32 @@ class ZoneWebServer(Node):
         # Add callback to log result without blocking
         future.add_done_callback(lambda f: self._save_zone_done_callback(f, name))
         
+        # Store zone metadata in zones.yaml
+        try:
+            zones = self.load_zones()
+            if name not in zones:
+                # Wait briefly for the service to save the zone
+                time.sleep(0.2)
+                zones = self.load_zones()
+            
+            if name in zones:
+                # Add metadata to existing zone
+                zones[name]['type'] = zone_type
+                zones[name]['speed'] = speed
+                
+                if zone_type == 'action' and action:
+                    zones[name]['action'] = action
+                elif zone_type == 'charge' and charge_duration is not None:
+                    zones[name]['charge_duration'] = charge_duration
+                
+                # Save back to file
+                with open(self.zones_file, 'w') as f:
+                    yaml.dump({'zones': zones}, f, default_flow_style=False)
+                    
+                self.get_logger().info(f'Zone "{name}" metadata saved: type={zone_type}, speed={speed}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to save zone metadata: {e}')
+        
         # Return immediately so UI stays responsive
         return {'ok': True, 'message': f'Saving zone "{name}"...'}
     
@@ -1324,6 +1421,39 @@ class ZoneWebServer(Node):
                 self.get_logger().error(f'Failed to save zone "{name}": {response.message}')
         except Exception as e:
             self.get_logger().error(f'Save zone service call failed: {e}')
+    
+    def update_zone_params(self, name, zone_type='normal', speed=0.5, action=None, charge_duration=None):
+        """Update zone parameters (type, speed, action, charge_duration)"""
+        try:
+            zones = self.load_zones()
+            
+            if name not in zones:
+                return {'ok': False, 'message': f'Zone "{name}" not found'}
+            
+            # Update metadata
+            zones[name]['type'] = zone_type
+            zones[name]['speed'] = speed
+            
+            # Remove old parameters
+            zones[name].pop('action', None)
+            zones[name].pop('charge_duration', None)
+            
+            # Add type-specific parameters
+            if zone_type == 'action' and action:
+                zones[name]['action'] = action
+            elif zone_type == 'charge' and charge_duration is not None:
+                zones[name]['charge_duration'] = charge_duration
+            
+            # Save back to file
+            with open(self.zones_file, 'w') as f:
+                yaml.dump({'zones': zones}, f, default_flow_style=False)
+            
+            self.get_logger().info(f'Zone "{name}" parameters updated: type={zone_type}, speed={speed}')
+            return {'ok': True, 'message': f'Zone "{name}" parameters updated'}
+            
+        except Exception as e:
+            self.get_logger().error(f'Failed to update zone params: {e}')
+            return {'ok': False, 'message': f'Error updating zone: {str(e)}'}
     
     def start_sequence(self, zone_names):
         """Start navigating through zones in sequence"""
@@ -1484,7 +1614,7 @@ class ZoneWebServer(Node):
             self.stop_sequence()
     
     def go_to_zone(self, name, is_sequence=False):
-        """Call go_to_zone service"""
+        """Send a GoToZone action goal"""
         # Block if e-stop is latched
         if self.estop_active:
             return {'ok': False, 'message': '🛑 E-STOP ACTIVE. Reset before navigating.'}
@@ -1492,16 +1622,18 @@ class ZoneWebServer(Node):
         # Check if in manual mode - block autonomous navigation
         if self.current_mode == 'manual' and not is_sequence:
             return {'ok': False, 'message': '⚠️  Cannot navigate: Robot is in MANUAL MODE. Deactivate manual mode first.'}
-        
-        if not self.go_to_zone_client.wait_for_service(timeout_sec=1.0):
-            return {'ok': False, 'message': 'Go to zone service not available'}
+
+        # Wait for action server
+        ready = self.go_to_zone_action_client.wait_for_server(timeout_sec=5.0)
+        if not ready:
+            return {'ok': False, 'message': 'GoToZone action server not available'}
         
         # Switch to zones mode (unless this is part of a sequence)
         if not is_sequence:
             mode_msg = String()
             mode_msg.data = 'zones'
             self.mode_pub.publish(mode_msg)
-            self.current_mode = 'zones'  # Update immediately
+            self.current_mode = 'zones'
             self.get_logger().info('🎯 Switching to ZONES mode')
         
         # Clear safety stop if confidence is good
@@ -1514,19 +1646,57 @@ class ZoneWebServer(Node):
             if is_sequence:
                 self.stop_sequence()
             return {'ok': False, 'message': f'Cannot navigate: Localization confidence too low ({self.localization_confidence:.1f}%). Improve robot localization first or use "Force Resume" if obstacles are cleared.'}
-        
-        request = GoToZone.Request()
-        request.name = name
-        # Send the request asynchronously without blocking
-        future = self.go_to_zone_client.call_async(request)
-        
-        # If part of sequence, add callback to continue to next zone
-        if is_sequence:
-            future.add_done_callback(self._sequence_zone_done_callback)
-        
-        # Don't wait for completion - return immediately so pose updates continue
-        # The navigation will proceed in the background
+
+        goal_msg = GoToZoneAction.Goal()
+        goal_msg.name = name
+
+        # Save mission state for resume (only for standalone zone nav)
+        if not is_sequence:
+            self.save_mission_state('zone', {'name': name}, 0, None)
+
+        send_goal_future = self.go_to_zone_action_client.send_goal_async(
+            goal_msg,
+            feedback_callback=self._go_to_zone_feedback_callback
+        )
+        send_goal_future.add_done_callback(lambda fut: self._go_to_zone_goal_response_callback(fut, name))
+
         return {'ok': True, 'message': f'Navigation to zone "{name}" started'}
+
+    def _go_to_zone_feedback_callback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+        progress_pct = int(feedback.progress * 100)
+        status_note = feedback.status if feedback.status else 'Navigating'
+        self.get_logger().info(f'GoToZone feedback: {status_note} ({progress_pct}%)')
+
+    def _go_to_zone_goal_response_callback(self, future, name):
+        try:
+            goal_handle = future.result()
+        except Exception as e:
+            self.get_logger().error(f'Failed to send GoToZone goal: {e}')
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().error('GoToZone goal rejected by server')
+            return
+
+        self.current_nav_goal_handle = goal_handle
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(lambda f: self._go_to_zone_result_callback(f, name))
+
+    def _go_to_zone_result_callback(self, future, name):
+        self.current_nav_goal_handle = None
+        try:
+            result = future.result()
+            action_result = result.result
+        except Exception as e:
+            self.get_logger().error(f'GoToZone result error: {e}')
+            return
+
+        if action_result.success:
+            self.get_logger().info(f'✓ Reached zone "{name}": {action_result.message}')
+            self.clear_mission_state()
+        else:
+            self.get_logger().error(f'GoToZone failed: {action_result.message}')
     
     def convert_map_to_png(self):
         """Convert PGM map to PNG for web display"""
@@ -1610,6 +1780,10 @@ def get_zones():
         return jsonify({'error': 'ROS node not initialized'}), 500
     
     zones = ros_node.load_zones()
+    
+    # Add console logging for debugging
+    ros_node.get_logger().debug(f'Returning zones: {zones}')
+    
     return jsonify({'zones': zones})
 
 
@@ -1656,8 +1830,10 @@ def save_zone():
     x = data.get('x')
     y = data.get('y')
     theta = data.get('theta', 0.0)
-    zone_type = data.get('type', 'normal')  # 'normal', 'no-go', 'speed'
-    speed_limit = data.get('speed_limit', None)
+    zone_type = data.get('type', 'normal')  # 'normal', 'action', 'charge'
+    speed = data.get('speed', 0.5)
+    action = data.get('action', None)
+    charge_duration = data.get('charge_duration', None)
     
     if not name or x is None or y is None:
         return jsonify({'error': 'Missing required fields'}), 400
@@ -1673,12 +1849,7 @@ def save_zone():
         })
     
     # Direct call - save_zone uses async service call pattern (non-blocking)
-    result = ros_node.save_zone(name, x, y, theta)
-    
-    # Store zone metadata if save was successful
-    if result.get('ok') and (zone_type != 'normal' or speed_limit is not None):
-        # TODO: Implement zone metadata storage
-        pass
+    result = ros_node.save_zone(name, x, y, theta, zone_type, speed, action, charge_duration)
     
     return jsonify(result)
 
@@ -1695,7 +1866,7 @@ def goto_zone():
     if not name:
         return jsonify({'error': 'Missing zone name'}), 400
     
-    # Direct call is safe - method is async and non-blocking
+    # Call GoToZone service
     result = ros_node.go_to_zone(name)
     return jsonify(result)
 
@@ -1712,8 +1883,28 @@ def delete_zone():
     if not name:
         return jsonify({'error': 'Missing zone name'}), 400
     
-    # Direct call is safe - simple file operation
+    # Call DeleteZone service
     result = ros_node.delete_zone(name)
+    return jsonify(result)
+
+
+@app.route('/api/zones/reorder', methods=['POST'])
+def reorder_zones():
+    """Reorder zones"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    data = request.json
+    zones_dict = data.get('zones')
+    
+    if not zones_dict:
+        return jsonify({'error': 'Missing zones data'}), 400
+    
+    # Extract zone names in order
+    zone_names = list(zones_dict.keys())
+    
+    # Call ReorderZones service
+    result = ros_node.reorder_zones_service(zone_names)
     return jsonify(result)
 
 
@@ -1735,6 +1926,27 @@ def update_zone():
     # Save updated zone position
     # Direct call - save_zone uses async service call pattern (non-blocking)
     result = ros_node.save_zone(name, x, y, theta)
+    return jsonify(result)
+
+
+@app.route('/api/zones/update-params', methods=['POST'])
+def update_zone_params():
+    """Update zone parameters (type, speed, action, charge_duration)"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    data = request.json
+    name = data.get('name')
+    zone_type = data.get('type', 'normal')
+    speed = data.get('speed', 0.5)
+    action = data.get('action', '')
+    charge_duration = data.get('charge_duration', 0.0)
+    
+    if not name:
+        return jsonify({'error': 'Zone name is required'}), 400
+    
+    # Call UpdateZoneParams service
+    result = ros_node.update_zone_params(name, zone_type, speed, action, charge_duration)
     return jsonify(result)
 
 
@@ -2047,7 +2259,23 @@ def estop_reset():
         stop_msg = Twist()
         ros_node.cmd_vel_safety_pub.publish(stop_msg)
         
-        return jsonify({'ok': True, 'message': 'E-STOP reset - robot can now move'})
+        # Check if there is an interrupted mission we can offer to resume
+        mission_state = ros_node.load_mission_state()
+        mission_summary = None
+        if mission_state.get('active'):
+            mission_summary = {
+                'active': True,
+                'type': mission_state.get('type'),
+                'progress': mission_state.get('progress', 0),
+                'total': len(mission_state.get('data', [])) if isinstance(mission_state.get('data'), list) else 0,
+                'interrupted_by': mission_state.get('interrupted_by'),
+            }
+        
+        return jsonify({
+            'ok': True,
+            'message': 'E-STOP reset - robot can now move',
+            'mission': mission_summary
+        })
     except Exception as e:
         ros_node.get_logger().error(f'E-STOP reset error: {e}')
         return jsonify({'error': str(e)}), 500

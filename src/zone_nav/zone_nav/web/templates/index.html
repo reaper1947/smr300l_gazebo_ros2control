@@ -322,16 +322,16 @@
             color: var(--accent-blue);
         }
         
-        .zone-type-btn.no-go.active {
-            border-color: var(--accent-red);
-            background: rgba(248, 81, 73, 0.15);
-            color: var(--accent-red);
-        }
-        
-        .zone-type-btn.speed.active {
+        .zone-type-btn.action.active {
             border-color: var(--accent-yellow);
             background: rgba(210, 153, 34, 0.15);
             color: var(--accent-yellow);
+        }
+        
+        .zone-type-btn.charge.active {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.15);
+            color: #00ff88;
         }
         
         h2 {
@@ -383,6 +383,23 @@
         .zone-actions {
             display: flex;
             gap: 8px;
+        }
+        
+        .btn-reorder {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            padding: 4px 8px;
+            font-size: 14px;
+            line-height: 1;
+        }
+        
+        .btn-reorder:hover {
+            background: var(--border-secondary);
+        }
+        
+        .btn-reorder:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
         }
         
         button {
@@ -1187,11 +1204,11 @@
                     <button class="zone-type-btn active" onclick="setZoneType('normal')" id="zone-type-normal">
                         Normal
                     </button>
-                    <button class="zone-type-btn no-go" onclick="setZoneType('no-go')" id="zone-type-no-go">
-                        NO-GO
+                    <button class="zone-type-btn action" onclick="setZoneType('action')" id="zone-type-action">
+                        Action
                     </button>
-                    <button class="zone-type-btn speed" onclick="setZoneType('speed')" id="zone-type-speed">
-                        Speed
+                    <button class="zone-type-btn charge" onclick="setZoneType('charge')" id="zone-type-charge">
+                        Charge
                     </button>
                 </div>
             <div class="controls" style="background: transparent; padding: 0; margin: 0;">
@@ -1201,19 +1218,27 @@
                 </div>
                 <div class="input-group">
                     <label>X Position (m):</label>
-                    <input type="number" id="zone-x" step="0.01" placeholder="Click on map or enter value">
+                    <input type="number" id="zone-x" step="0.01" placeholder="Click on map" readonly>
                 </div>
                 <div class="input-group">
                     <label>Y Position (m):</label>
-                    <input type="number" id="zone-y" step="0.01" placeholder="Click on map or enter value">
+                    <input type="number" id="zone-y" step="0.01" placeholder="Click on map" readonly>
                 </div>
                 <div class="input-group">
                     <label>Orientation (rad):</label>
-                    <input type="number" id="zone-theta" step="0.1" value="0" placeholder="0 = facing right">
+                    <input type="number" id="zone-theta" step="0.1" value="0" placeholder="Drag after click" readonly>
                 </div>
-                <div class="input-group" id="speed-limit-group" style="display: none;">
-                    <label>Speed Limit (m/s):</label>
-                    <input type="number" id="zone-speed" step="0.1" value="0.3" min="0.1" max="1.0" placeholder="0.3">
+                <div class="input-group">
+                    <label>Speed (m/s):</label>
+                    <input type="number" id="zone-speed" step="0.05" value="0.5" min="0.1" max="1.5" placeholder="0.5">
+                </div>
+                <div class="input-group" id="action-param-group" style="display: none;">
+                    <label>Action:</label>
+                    <input type="text" id="zone-action" placeholder="e.g., pickup, drop, wait" value="">
+                </div>
+                <div class="input-group" id="charge-param-group" style="display: none;">
+                    <label>Charge Duration (s):</label>
+                    <input type="number" id="zone-charge-duration" step="10" value="300" min="0" placeholder="300">
                 </div>
                 <button class="btn-save" onclick="saveZone()">Save Zone</button>
                 <div id="status"></div>
@@ -1349,7 +1374,10 @@
         let spaceKeyPressed = false;
         
         // Zone creation
-        let currentZoneType = 'normal';  // 'normal', 'no-go', 'speed'
+        let currentZoneType = 'normal';  // 'normal', 'action', 'charge'
+        let settingOrientation = false;  // Track if we're in orientation drag mode
+        let orientationStartX = 0;
+        let orientationStartY = 0;
         let eStopActive = false;
         
         // Custom confirmation dialog
@@ -1648,6 +1676,7 @@
                 .then(response => response.json())
                 .then(data => {
                     zones = data.zones || {};
+                    console.log('Loaded zones:', zones);  // Debug: show loaded zones
                     updateZoneList();
                     if (mapData) drawMap();
                 })
@@ -1784,9 +1813,11 @@
             }
             
             list.innerHTML = '';
-            for (const [name, zone] of Object.entries(zones)) {
+            const zoneEntries = Object.entries(zones);
+            zoneEntries.forEach(([name, zone], index) => {
                 const li = document.createElement('li');
                 li.className = 'zone-item';
+                li.dataset.zoneName = name;
                 
                 // Create zone info div
                 const infoDiv = document.createElement('div');
@@ -1803,23 +1834,46 @@
                 const actionsDiv = document.createElement('div');
                 actionsDiv.className = 'zone-actions';
                 
+                // Up button
+                const upBtn = document.createElement('button');
+                upBtn.className = 'btn-reorder';
+                upBtn.textContent = '▲';
+                upBtn.disabled = index === 0;
+                upBtn.onclick = () => moveZone(name, -1);
+                
+                // Down button
+                const downBtn = document.createElement('button');
+                downBtn.className = 'btn-reorder';
+                downBtn.textContent = '▼';
+                downBtn.disabled = index === zoneEntries.length - 1;
+                downBtn.onclick = () => moveZone(name, 1);
+                
                 const goBtn = document.createElement('button');
                 goBtn.className = 'btn-go';
                 goBtn.textContent = 'GO';
                 goBtn.onclick = () => goToZone(name);
+                
+                const editBtn = document.createElement('button');
+                editBtn.className = 'btn-save';
+                editBtn.textContent = '✎';
+                editBtn.style.cssText = 'padding: 7px 10px; background: #2196F3;';
+                editBtn.onclick = () => editZoneParameters(name, zone);
                 
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'btn-delete';
                 deleteBtn.textContent = '✕';
                 deleteBtn.onclick = () => deleteZone(name);
                 
+                actionsDiv.appendChild(upBtn);
+                actionsDiv.appendChild(downBtn);
+                actionsDiv.appendChild(editBtn);
                 actionsDiv.appendChild(goBtn);
                 actionsDiv.appendChild(deleteBtn);
                 
                 li.appendChild(infoDiv);
                 li.appendChild(actionsDiv);
                 list.appendChild(li);
-            }
+            });
         }
 
         function drawMap() {
@@ -1842,14 +1896,17 @@
                 const metadata = zone.metadata || {};
                 const zoneType = metadata.type || 'normal';
                 let zoneColor = '#4CAF50';  // Normal (green)
+                let iconColor = '#4CAF50';
                 let zoneIcon = '';
                 
-                if (zoneType === 'no-go') {
-                    zoneColor = '#f44336';  // NO-GO (red)
-                    zoneIcon = '[X]';
-                } else if (zoneType === 'speed') {
-                    zoneColor = '#FFC107';  // Speed zone (amber)
-                    zoneIcon = '[S]';
+                if (zoneType === 'action') {
+                    zoneColor = '#FFC107';  // Action (amber)
+                    iconColor = '#FF6F00';  // Darker orange for icon
+                    zoneIcon = '⏩';  // Action arrow icon
+                } else if (zoneType === 'charge') {
+                    zoneColor = '#00ff88';  // Charge (bright green)
+                    iconColor = '#00CC6A';  // Darker green for icon
+                    zoneIcon = '🔌';  // Charging plug icon
                 }
                 
                 // Draw marker
@@ -1863,23 +1920,6 @@
                 ctx.stroke();
                 ctx.restore();
                 
-                // Draw NO-GO zone exclusion radius
-                if (zoneType === 'no-go') {
-                    ctx.save();
-                    ctx.fillStyle = 'rgba(244, 67, 54, 0.15)';
-                    ctx.strokeStyle = 'rgba(244, 67, 54, 0.5)';
-                    ctx.lineWidth = 2;
-                    ctx.setLineDash([5, 5]);
-                    const exclusionRadius = 1.0;  // 1 meter radius
-                    const pixelRadius = exclusionRadius / mapData.resolution * scale;
-                    ctx.beginPath();
-                    ctx.arc(px, py, pixelRadius, 0, 2 * Math.PI);
-                    ctx.fill();
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                    ctx.restore();
-                }
-                
                 // Draw label with type indicator
                 ctx.save();
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
@@ -1889,28 +1929,26 @@
                 const textWidth = ctx.measureText(labelText).width;
                 ctx.fillRect(px - textWidth/2 - 5, py - 30, textWidth + 10, 20);
                 ctx.strokeRect(px - textWidth/2 - 5, py - 30, textWidth + 10, 20);
-                ctx.fillStyle = zoneColor;
+                ctx.fillStyle = zoneType !== 'normal' ? iconColor : zoneColor;
                 ctx.font = 'bold 12px Arial';
                 ctx.textAlign = 'center';
                 ctx.fillText(labelText, px, py - 16);
                 ctx.restore();
                 
-                // Draw orientation arrow (skip for NO-GO zones)
-                if (zoneType !== 'no-go') {
-                    const angle = Math.atan2(zone.orientation.z, zone.orientation.w) * 2;
-                    const arrowLen = 20;
-                    ctx.save();
-                    ctx.strokeStyle = '#FFD700';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.moveTo(px, py);
-                    ctx.lineTo(
-                        px + Math.cos(angle) * arrowLen,
-                        py + Math.sin(angle) * arrowLen
-                    );
-                    ctx.stroke();
-                    ctx.restore();
-                }
+                // Draw orientation arrow
+                const angle = Math.atan2(zone.orientation.z, zone.orientation.w) * 2;
+                const arrowLen = 20;
+                ctx.save();
+                ctx.strokeStyle = '#FFD700';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(px, py);
+                ctx.lineTo(
+                    px + Math.cos(angle) * arrowLen,
+                    py + Math.sin(angle) * arrowLen
+                );
+                ctx.stroke();
+                ctx.restore();
             }
             
             // Draw navigation path
@@ -1952,7 +1990,7 @@
                 for (const point of laserScan) {
                     const [px, py] = worldToPixel(point.x, point.y);
                     ctx.beginPath();
-                    ctx.arc(px, py, 4.5, 0, 2 * Math.PI);
+                    ctx.arc(px, py, 4.0, 0, 2 * Math.PI);
                     ctx.fill();
                 }
                 ctx.restore();
@@ -2160,6 +2198,67 @@
                 
                 ctx.restore();
             }
+            
+            // Draw orientation preview when setting zone orientation
+            if (settingOrientation) {
+                const [startPx, startPy] = worldToPixel(orientationStartX, orientationStartY);
+                const theta = parseFloat(document.getElementById('zone-theta').value) || 0;
+                const arrowLen = 40;
+                
+                // Draw start point
+                ctx.save();
+                ctx.fillStyle = '#4CAF50';
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(startPx, startPy, 8, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.stroke();
+                
+                // Draw orientation arrow
+                ctx.strokeStyle = '#FFD700';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(startPx, startPy);
+                ctx.lineTo(
+                    startPx + Math.cos(theta) * arrowLen,
+                    startPy - Math.sin(theta) * arrowLen  // Negative because canvas Y is flipped
+                );
+                ctx.stroke();
+                
+                // Draw arrow head
+                ctx.fillStyle = '#FFD700';
+                ctx.beginPath();
+                const headSize = 10;
+                const endX = startPx + Math.cos(theta) * arrowLen;
+                const endY = startPy - Math.sin(theta) * arrowLen;
+                ctx.moveTo(endX, endY);
+                ctx.lineTo(
+                    endX - Math.cos(theta) * headSize + Math.sin(theta) * headSize/2,
+                    endY + Math.sin(theta) * headSize + Math.cos(theta) * headSize/2
+                );
+                ctx.lineTo(
+                    endX - Math.cos(theta) * headSize - Math.sin(theta) * headSize/2,
+                    endY + Math.sin(theta) * headSize - Math.cos(theta) * headSize/2
+                );
+                ctx.closePath();
+                ctx.fill();
+                
+                // Draw instruction text
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+                ctx.strokeStyle = '#FFD700';
+                ctx.lineWidth = 2;
+                const instructionText = 'Click to confirm orientation';
+                const instWidth = ctx.measureText(instructionText).width;
+                ctx.fillRect(startPx - instWidth/2 - 5, startPy - 50, instWidth + 10, 22);
+                ctx.strokeRect(startPx - instWidth/2 - 5, startPy - 50, instWidth + 10, 22);
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 13px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(instructionText, startPx, startPy - 35);
+                
+                ctx.restore();
+            }
         }
 
         function worldToPixel(wx, wy) {
@@ -2210,12 +2309,31 @@
                 drawnPath.push({x: wx, y: wy});
                 updatePathUI();
                 drawMap();
+            } else if (settingOrientation) {
+                // Calculate orientation from drag
+                const dx = wx - orientationStartX;
+                const dy = wy - orientationStartY;
+                const theta = Math.atan2(dy, dx);
+                
+                document.getElementById('zone-theta').value = theta.toFixed(3);
+                settingOrientation = false;
+                canvas.style.cursor = 'crosshair';
+                
+                showStatus('Orientation set! Enter zone name and click Save.', 'info');
+                drawMap();
             } else {
-                // Original zone selection behavior
+                // Start zone position selection
                 document.getElementById('zone-x').value = wx.toFixed(2);
                 document.getElementById('zone-y').value = wy.toFixed(2);
+                document.getElementById('zone-theta').value = '0.000';
                 
-                showStatus('Position selected! Enter zone name and click Save.', 'info');
+                // Enter orientation setting mode
+                settingOrientation = true;
+                orientationStartX = wx;
+                orientationStartY = wy;
+                canvas.style.cursor = 'crosshair';
+                
+                showStatus('Drag mouse to set orientation direction...', 'info');
             }
         }
 
@@ -2230,9 +2348,23 @@
         }
 
         function onMouseMove(e) {
-            if (isDragging) {
+            if (isDragging && !settingOrientation) {
                 offsetX = e.clientX - dragStartX;
                 offsetY = e.clientY - dragStartY;
+                drawMap();
+            } else if (settingOrientation) {
+                // Show live orientation preview
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const [wx, wy] = pixelToWorld(x, y);
+                
+                // Update orientation preview
+                const dx = wx - orientationStartX;
+                const dy = wy - orientationStartY;
+                const theta = Math.atan2(dy, dx);
+                document.getElementById('zone-theta').value = theta.toFixed(3);
+                
                 drawMap();
             }
         }
@@ -2323,7 +2455,7 @@
             const x = parseFloat(document.getElementById('zone-x').value);
             const y = parseFloat(document.getElementById('zone-y').value);
             const theta = parseFloat(document.getElementById('zone-theta').value) || 0;
-            const speedLimit = document.getElementById('zone-speed') ? parseFloat(document.getElementById('zone-speed').value) : null;
+            const speed = parseFloat(document.getElementById('zone-speed').value) || 0.5;
             
             if (!name) {
                 showStatus('Please enter a zone name', 'error');
@@ -2331,7 +2463,7 @@
             }
             
             if (isNaN(x) || isNaN(y)) {
-                showStatus('Please click on the map or enter valid coordinates', 'error');
+                showStatus('Please click on the map to select position', 'error');
                 return;
             }
             
@@ -2341,8 +2473,17 @@
                 y, 
                 theta,
                 type: currentZoneType,
-                speed_limit: currentZoneType === 'speed' ? speedLimit : null
+                speed: speed
             };
+            
+            // Add type-specific parameters
+            if (currentZoneType === 'action') {
+                const action = document.getElementById('zone-action').value.trim();
+                zoneData.action = action || 'default';
+            } else if (currentZoneType === 'charge') {
+                const chargeDuration = parseFloat(document.getElementById('zone-charge-duration').value) || 300;
+                zoneData.charge_duration = chargeDuration;
+            }
             
             fetch('/api/zones/save', {
                 method: 'POST',
@@ -2354,6 +2495,10 @@
                 if (data.ok) {
                     showStatus(data.message, 'success');
                     document.getElementById('zone-name').value = '';
+                    document.getElementById('zone-x').value = '';
+                    document.getElementById('zone-y').value = '';
+                    document.getElementById('zone-theta').value = '0';
+                    settingOrientation = false;
                     loadZones();
                 } else {
                     if (data.warning_type === 'safety') {
@@ -2425,8 +2570,158 @@
                 }
             })
             .catch(error => {
-                console.error('Delete error:', error);
-                showStatus('Error: ' + error, 'error');
+                console.error('Error deleting zone:', error);
+                showStatus('Error deleting zone', 'error');
+            });
+        }
+        
+        function moveZone(name, direction) {
+            const zoneEntries = Object.entries(zones);
+            const currentIndex = zoneEntries.findIndex(([zoneName]) => zoneName === name);
+            
+            if (currentIndex === -1) return;
+            
+            const newIndex = currentIndex + direction;
+            if (newIndex < 0 || newIndex >= zoneEntries.length) return;
+            
+            // Swap the zones
+            [zoneEntries[currentIndex], zoneEntries[newIndex]] = [zoneEntries[newIndex], zoneEntries[currentIndex]];
+            
+            // Reconstruct zones object with new order
+            const reorderedZones = {};
+            zoneEntries.forEach(([zoneName, zoneData]) => {
+                reorderedZones[zoneName] = zoneData;
+            });
+            
+            // Save to backend
+            fetch('/api/zones/reorder', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({zones: reorderedZones})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    zones = reorderedZones;
+                    updateZoneList();
+                    if (mapData) drawMap();
+                } else {
+                    showStatus('Failed to reorder zones', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error reordering zones:', error);
+                showStatus('Error reordering zones', 'error');
+            });
+        }
+        
+        function editZoneParameters(name, zone) {
+            // Get current zone metadata
+            const metadata = zone.metadata || {};
+            console.log(`Editing zone "${name}":`, {zone, metadata});  // Debug
+            const zoneType = metadata.type || zone.type || 'normal';
+            const speed = metadata.speed || zone.speed || 0.5;
+            const action = metadata.action || zone.action || '';
+            const chargeDuration = metadata.charge_duration || zone.charge_duration || 300;
+            
+            // Create edit form
+            const html = `
+                <div style="padding: 20px;">
+                    <h4 style="margin-top: 0; color: #fff;">Edit Zone: ${name}</h4>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; color: #8b949e; font-size: 12px;">Zone Type</label>
+                        <select id="edit-zone-type" style="width: 100%; padding: 8px; background: #2d333b; color: #fff; border: 1px solid #30363d; border-radius: 6px;">
+                            <option value="normal" ${zoneType === 'normal' ? 'selected' : ''}>Normal</option>
+                            <option value="action" ${zoneType === 'action' ? 'selected' : ''}>Action</option>
+                            <option value="charge" ${zoneType === 'charge' ? 'selected' : ''}>Charge</option>
+                        </select>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; color: #8b949e; font-size: 12px;">Speed (m/s)</label>
+                        <input type="number" id="edit-zone-speed" value="${speed}" step="0.05" min="0.1" max="1.5" style="width: 100%; padding: 8px; background: #2d333b; color: #fff; border: 1px solid #30363d; border-radius: 6px; box-sizing: border-box;">
+                    </div>
+                    
+                    <div id="edit-action-group" style="margin-bottom: 15px; display: ${zoneType === 'action' ? 'block' : 'none'};">
+                        <label style="display: block; margin-bottom: 5px; color: #8b949e; font-size: 12px;">Action</label>
+                        <input type="text" id="edit-zone-action" value="${action}" placeholder="e.g., pickup, drop, wait" style="width: 100%; padding: 8px; background: #2d333b; color: #fff; border: 1px solid #30363d; border-radius: 6px; box-sizing: border-box;">
+                    </div>
+                    
+                    <div id="edit-charge-group" style="margin-bottom: 15px; display: ${zoneType === 'charge' ? 'block' : 'none'};">
+                        <label style="display: block; margin-bottom: 5px; color: #8b949e; font-size: 12px;">Charge Duration (s)</label>
+                        <input type="number" id="edit-zone-charge-duration" value="${chargeDuration}" step="10" min="0" style="width: 100%; padding: 8px; background: #2d333b; color: #fff; border: 1px solid #30363d; border-radius: 6px; box-sizing: border-box;">
+                    </div>
+                </div>
+            `;
+            
+            // Show in notification with save/cancel buttons
+            showNotification(
+                '✎',
+                `Edit Zone: ${name}`,
+                html,
+                [
+                    {text: 'Save', style: 'success', action: () => {
+                        const newType = document.getElementById('edit-zone-type').value;
+                        const newSpeed = parseFloat(document.getElementById('edit-zone-speed').value);
+                        const newAction = document.getElementById('edit-zone-action').value;
+                        const newChargeDuration = parseFloat(document.getElementById('edit-zone-charge-duration').value);
+                        
+                        saveZoneParameters(name, newType, newSpeed, newAction, newChargeDuration);
+                        closeNotification();
+                    }},
+                    {text: 'Cancel', style: 'secondary', action: closeNotification}
+                ]
+            );
+            
+            // Add event listener for type changes
+            setTimeout(() => {
+                const typeSelect = document.getElementById('edit-zone-type');
+                if (typeSelect) {
+                    typeSelect.addEventListener('change', (e) => {
+                        const actionGroup = document.getElementById('edit-action-group');
+                        const chargeGroup = document.getElementById('edit-charge-group');
+                        const newType = e.target.value;
+                        
+                        if (actionGroup) actionGroup.style.display = newType === 'action' ? 'block' : 'none';
+                        if (chargeGroup) chargeGroup.style.display = newType === 'charge' ? 'block' : 'none';
+                    });
+                }
+            }, 100);
+        }
+        
+        function saveZoneParameters(name, type, speed, action, chargeDuration) {
+            const updateData = {
+                name: name,
+                type: type,
+                speed: speed
+            };
+            
+            if (type === 'action') {
+                updateData.action = action;
+            } else if (type === 'charge') {
+                updateData.charge_duration = chargeDuration;
+            }
+            
+            showStatus(`Updating zone "${name}" parameters...`, 'info');
+            
+            fetch('/api/zones/update-params', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(updateData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    showStatus(data.message, 'success');
+                    loadZones();
+                } else {
+                    showStatus(data.message || 'Failed to update zone', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error updating zone:', error);
+                showStatus('Error updating zone', 'error');
             });
         }
         
@@ -2985,7 +3280,7 @@
             
             iconDiv.textContent = icon;
             titleDiv.textContent = title;
-            messageDiv.textContent = message;
+            messageDiv.innerHTML = message;
             
             // Clear and add buttons
             buttonsDiv.innerHTML = '';
@@ -3010,12 +3305,19 @@
             document.querySelectorAll('.zone-type-btn').forEach(btn => btn.classList.remove('active'));
             document.getElementById('zone-type-' + type).classList.add('active');
             
-            // Show/hide speed limit input
-            const speedGroup = document.getElementById('speed-limit-group');
-            if (type === 'speed') {
-                speedGroup.style.display = 'block';
+            // Show/hide type-specific parameter inputs
+            const actionGroup = document.getElementById('action-param-group');
+            const chargeGroup = document.getElementById('charge-param-group');
+            
+            if (type === 'action') {
+                actionGroup.style.display = 'block';
+                chargeGroup.style.display = 'none';
+            } else if (type === 'charge') {
+                actionGroup.style.display = 'none';
+                chargeGroup.style.display = 'block';
             } else {
-                speedGroup.style.display = 'none';
+                actionGroup.style.display = 'none';
+                chargeGroup.style.display = 'none';
             }
         }
         
@@ -3036,20 +3338,21 @@
             if (target === eStopActive) return; // no change
             setEStopUI(target);
 
-            // Cancel local activities immediately when activating
-            if (target) {
-                if (pathFollowingActive) stopPathFollowing();
-                if (sequenceActive) toggleSequence();
-            }
-
             const endpoint = target ? '/api/estop/activate' : '/api/estop/reset';
             fetch(endpoint, { method: 'POST', headers: {'Content-Type': 'application/json'} })
                 .then(r => r.json())
-                .then(() => {
+                .then((data) => {
                     if (target) {
                         showStatus('E-STOP engaged. Robot halted.', 'warning');
                     } else {
                         showStatus('E-STOP reset - operations resumed', 'success');
+                        // If backend reports an interrupted mission, prompt to resume
+                        if (data && data.mission && data.mission.active) {
+                            promptMissionResume(data.mission);
+                        } else {
+                            // Fallback: poll mission status in case mission info was not attached
+                            checkForInterruptedMission();
+                        }
                     }
                 })
                 .catch(error => {
@@ -3096,6 +3399,38 @@
                 };
                 modeMsg.send();
             }
+        }
+
+        // Show mission resume prompt (used after E-STOP reset)
+        function promptMissionResume(mission) {
+            if (!mission || !mission.active) return;
+            const missionType = mission.type === 'path' ? 'path following' : mission.type === 'sequence' ? 'sequence navigation' : mission.type;
+            const progress = (mission.progress || 0) + 1;
+            const total = mission.total || 0;
+            const interruptReason = mission.interrupted_by === 'estop' ? 'E-STOP' : mission.interrupted_by || 'unknown';
+            
+            showNotification(
+                '⚠️',
+                'Resume Mission?',
+                `Previous ${missionType} was interrupted by ${interruptReason} at progress ${progress}/${total}. Resume mission?`,
+                [
+                    {
+                        text: 'Resume Mission',
+                        style: 'success',
+                        action: () => { resumeMission(); closeNotification(); }
+                    },
+                    {
+                        text: 'Discard',
+                        style: 'danger',
+                        action: () => { clearMissionState(); closeNotification(); }
+                    },
+                    {
+                        text: 'Later',
+                        style: 'secondary',
+                        action: closeNotification
+                    }
+                ]
+            );
         }
         
         // Map tool selection

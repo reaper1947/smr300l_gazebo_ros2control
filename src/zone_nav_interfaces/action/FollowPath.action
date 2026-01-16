@@ -1,0 +1,10 @@
+# Follow a sequence of waypoints
+geometry_msgs/PoseStamped[] waypoints
+---
+bool success
+string message
+uint32 completed
+---
+uint32 current_index
+uint32 total
+string status

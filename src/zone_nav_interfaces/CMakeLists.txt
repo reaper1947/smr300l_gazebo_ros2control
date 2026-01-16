@@ -8,14 +8,31 @@ endif()
 # Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 # Generate interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "action/GoToZone.action"
+  "action/FollowPath.action"
   "srv/SaveZone.srv"
   "srv/GoToZone.srv"
   "srv/UploadMap.srv"
   "srv/SetActiveMap.srv"
   "srv/GetActiveMap.srv"
+  "srv/DeleteZone.srv"
+  "srv/UpdateZoneParams.srv"
+  "srv/ReorderZones.srv"
+  "srv/SavePath.srv"
+  "srv/DeletePath.srv"
+  "srv/FollowPath.srv"
+  "srv/SaveLayout.srv"
+  "srv/LoadLayout.srv"
+  "srv/DeleteLayout.srv"
+  "srv/SetMaxSpeed.srv"
+  "srv/SetControlMode.srv"
+  "srv/SetSafetyOverride.srv"
+  "srv/SetEStop.srv"
+  DEPENDENCIES geometry_msgs
 )
 
 ament_export_dependencies(rosidl_default_runtime)

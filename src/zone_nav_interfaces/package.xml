@@ -4,11 +4,13 @@
   <name>zone_nav_interfaces</name>
   <version>0.0.0</version>
   <description>Service interfaces for zone navigation</description>
-  <maintainer email="s6403014621116@email.kmutnb.ac.th">aun</maintainer>
+  <maintainer email="prabalkhareofficial@gmail.com">prabal</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <depend>geometry_msgs</depend>
 
   <exec_depend>rosidl_default_runtime</exec_depend>
 
