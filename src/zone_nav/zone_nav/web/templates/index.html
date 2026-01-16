@@ -3782,14 +3782,12 @@
                 <div id="upload-status" style="margin-top: 15px;"></div>
             </div>
             
-            <!-- Available Maps (future enhancement) -->
+            <!-- Available Maps -->
             <div class="card" style="margin-top: 30px;">
                 <div class="card-header">
                     <h3 class="card-title">Available Maps</h3>
                 </div>
-                <div id="available-maps-list" style="padding: 15px;">
-                    <em style="color: #888;">List available maps and switch between them (coming soon)</em>
-                </div>
+                <div id="available-maps-list" style="padding: 15px; display: flex; flex-direction: column; gap: 8px;"></div>
             </div>
             
             <div class="instructions">
@@ -3838,6 +3836,7 @@
             // Load active map when switching to maps tab
             if (tabName === 'maps') {
                 refreshActiveMap();
+                fetchAvailableMaps();
             }
         }
         
@@ -3863,6 +3862,54 @@
             } catch (error) {
                 display.textContent = 'Error: ' + error.message;
                 display.style.color = 'var(--accent-red)';
+            }
+        }
+
+        async function fetchAvailableMaps() {
+            const container = document.getElementById('available-maps-list');
+            container.innerHTML = '<em style="color: #888;">Loading maps...</em>';
+            try {
+                const res = await fetch('/api/map/list');
+                const data = await res.json();
+                if (!data.success) {
+                    container.innerHTML = `<div class="status error">${data.message || 'Failed to load maps'}</div>`;
+                    return;
+                }
+
+                if (!data.maps || data.maps.length === 0) {
+                    container.innerHTML = '<em style="color: #888;">No maps found in maps or DownloadedMaps</em>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                data.maps.forEach(map => {
+                    const row = document.createElement('div');
+                    row.style.display = 'flex';
+                    row.style.alignItems = 'center';
+                    row.style.justifyContent = 'space-between';
+                    row.style.padding = '8px 10px';
+                    row.style.border = '1px solid var(--border-primary)';
+                    row.style.borderRadius = '6px';
+                    row.style.background = 'var(--bg-elevated)';
+
+                    const info = document.createElement('div');
+                    info.innerHTML = `<strong>${map.name}</strong><br><span style="color: #888; font-size: 12px;">${map.yaml_path}</span>`;
+
+                    const btn = document.createElement('button');
+                    btn.className = 'btn';
+                    btn.textContent = 'Set Active';
+                    btn.style.width = '140px';
+                    btn.onclick = async () => {
+                        await setActiveMap(map.yaml_path);
+                        refreshActiveMap();
+                    };
+
+                    row.appendChild(info);
+                    row.appendChild(btn);
+                    container.appendChild(row);
+                });
+            } catch (error) {
+                container.innerHTML = `<div class="status error">${error.message}</div>`;
             }
         }
         
@@ -3947,6 +3994,7 @@
                     if (confirm('Map uploaded successfully! Set as active map now?')) {
                         await setActiveMap(result.map_path);
                     }
+                    fetchAvailableMaps();
                     
                     // Clear form
                     document.getElementById('upload-map-name').value = '';
@@ -3973,7 +4021,17 @@
                 
                 if (result.success) {
                     statusDiv.innerHTML = `<div class="status success">✓ ${result.message}</div>`;
+                    
+                    // Reload the map in the UI
+                    const reloadResponse = await fetch('/api/map/reload', {method: 'POST'});
+                    const reloadResult = await reloadResponse.json();
+                    
+                    if (reloadResult.success) {
+                        console.log('Map reloaded:', reloadResult.map_path);
+                    }
+                    
                     refreshActiveMap();
+                    fetchAvailableMaps();
                 } else {
                     statusDiv.innerHTML = `<div class="status error">✗ ${result.message}</div>`;
                 }

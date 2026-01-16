@@ -21,9 +21,9 @@ class ModeSwitcher(Node):
         self.current_mode = 'manual'
         
         # Start in manual mode
-        self.activate_mode('manual')
+        self.activate_mode('zones')
         
-        self.get_logger().info('🎮 Mode Switcher started - Default: MANUAL')
+        self.get_logger().info('Mode Switcher started - Default: ZONES')
         self.get_logger().info('Available modes: manual, zones, sequence, path')
         self.get_logger().info('Publish to /control_mode: ros2 topic pub -1 /control_mode std_msgs/msg/String "{data: manual}"')
     
@@ -52,10 +52,10 @@ class ModeSwitcher(Node):
             pub.publish(msg)
         
         mode_icons = {
-            'manual': '🕹️  MANUAL',
-            'zones': '🎯 ZONES',
-            'sequence': '📝 SEQUENCE',
-            'path': '🛤️  PATH'
+            'manual': 'MANUAL',
+            'zones': 'ZONES',
+            'sequence': 'SEQUENCE',
+            'path': 'PATH'
         }
         
         self.get_logger().info(f'{mode_icons.get(mode, "🤖")} MODE ACTIVE - {active_topic} unlocked, others locked')

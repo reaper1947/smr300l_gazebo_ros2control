@@ -447,20 +447,45 @@ async function clearAllLayers() {
 
 // Export map
 async function exportMap() {
-    const path = prompt('Export path:', '/tmp/edited_map.pgm');
-    if (!path) return;
+    const defaultName = 'edited_map_' + new Date().toISOString().slice(0,10).replace(/-/g, '');
+    const baseName = prompt('Enter map name (without extension):', defaultName);
+    if (!baseName) return;
+
+    const pgmFilename = baseName.toLowerCase().endsWith('.pgm') ? baseName : `${baseName}.pgm`;
     
     try {
         updateStatus('Exporting map...');
         const response = await fetch(`${API_BASE}/map/export`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path })
+            body: JSON.stringify({ path: pgmFilename })
         });
         
         if (response.ok) {
-            updateStatus(`Map exported to ${path}`);
-            alert(`Map successfully exported to:\n${path}\n${path.replace('.pgm', '.yaml')}`);
+            const result = await response.json();
+            const downloadPgm = result.download || `/api/map/download/${pgmFilename}`;
+            const downloadYaml = downloadPgm.replace(/\.pgm$/, '.yaml');
+
+            // Download PGM
+            const aPgm = document.createElement('a');
+            aPgm.href = downloadPgm;
+            aPgm.download = pgmFilename;
+            document.body.appendChild(aPgm);
+            aPgm.click();
+            document.body.removeChild(aPgm);
+
+            // Download YAML after a short delay
+            setTimeout(() => {
+                const aYaml = document.createElement('a');
+                aYaml.href = downloadYaml;
+                aYaml.download = pgmFilename.replace(/\.pgm$/, '.yaml');
+                document.body.appendChild(aYaml);
+                aYaml.click();
+                document.body.removeChild(aYaml);
+            }, 500);
+
+            updateStatus(`Map exported to ${downloadPgm}`);
+            alert(`Map successfully exported:\n${pgmFilename}\n${pgmFilename.replace(/\\.pgm$/, '.yaml')}`);
         } else {
             updateStatus('Export failed');
         }

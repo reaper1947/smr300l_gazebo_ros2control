@@ -618,25 +618,24 @@
             const defaultName = 'edited_map_' + new Date().toISOString().slice(0,10).replace(/-/g, '');
             const baseName = prompt('Enter map name (without extension):', defaultName);
             if (!baseName) return;
-            
+
             updateStatus('Exporting...');
-            const path = `/tmp/${baseName}.pgm`;
+            const pgmFilename = baseName.toLowerCase().endsWith('.pgm') ? baseName : `${baseName}.pgm`;
+
             const response = await fetch(`${API_BASE}/map/export`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path })
+                body: JSON.stringify({ path: pgmFilename })
             });
             
             if (response.ok) {
                 const result = await response.json();
-                
-                // Download both PGM and YAML files
-                const pgmFilename = `${baseName}.pgm`;
-                const yamlFilename = `${baseName}.yaml`;
+                const downloadPgm = result.download || `/api/map/download/${pgmFilename}`;
+                const downloadYaml = downloadPgm.replace(/\.pgm$/, '.yaml');
                 
                 // Download PGM
                 const aPgm = document.createElement('a');
-                aPgm.href = `/api/map/download/${pgmFilename}`;
+                aPgm.href = downloadPgm;
                 aPgm.download = pgmFilename;
                 document.body.appendChild(aPgm);
                 aPgm.click();
@@ -645,15 +644,15 @@
                 // Download YAML after a short delay
                 setTimeout(() => {
                     const aYaml = document.createElement('a');
-                    aYaml.href = `/api/map/download/${yamlFilename}`;
-                    aYaml.download = yamlFilename;
+                    aYaml.href = downloadYaml;
+                    aYaml.download = pgmFilename.replace(/\.pgm$/, '.yaml');
                     document.body.appendChild(aYaml);
                     aYaml.click();
                     document.body.removeChild(aYaml);
                 }, 500);
                 
                 updateStatus('Export complete - downloading files...');
-                alert(`✓ Map exported!\n\nDownloading:\n• ${pgmFilename}\n• ${yamlFilename}\n\nYou can now use this map in Nav2!`);
+                alert(`✓ Map exported!\n\nDownloading:\n• ${pgmFilename}\n• ${pgmFilename.replace(/\\.pgm$/, '.yaml')}\n\nYou can now use this map in Nav2!`);
             } else {
                 updateStatus('Export failed');
                 alert('Failed to export map');

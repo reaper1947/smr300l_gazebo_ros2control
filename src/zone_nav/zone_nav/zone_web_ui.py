@@ -9,7 +9,8 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 from zone_nav_interfaces.srv import (
     SaveZone, DeleteZone, UpdateZoneParams, ReorderZones,
     SavePath, DeletePath, SaveLayout, LoadLayout, DeleteLayout,
-    SetMaxSpeed, SetControlMode, SetSafetyOverride, SetEStop
+    SetMaxSpeed, SetControlMode, SetSafetyOverride, SetEStop,
+    UploadMap, SetActiveMap, GetActiveMap
 )
 from zone_nav_interfaces.action import GoToZone as GoToZoneAction, FollowPath as FollowPathAction
 from nav2_msgs.action import NavigateToPose
@@ -23,7 +24,8 @@ from tf2_ros import TransformException
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from flask_cors import CORS
 import threading
-from concurrent.futures import Future, TimeoutError as FutureTimeoutError
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError, InvalidStateError
+import queue
 import yaml
 import os
 import math
@@ -40,6 +42,10 @@ class ZoneWebServer(Node):
         
         # Store executor reference for thread-safe ROS calls from Flask
         self.executor = executor
+
+        # Queue for marshaling Flask→ROS calls onto the executor thread(s)
+        self._ros_call_queue = queue.Queue()
+        self.create_timer(0.01, self._process_ros_call_queue)
         
         # TF2 buffer and listener for proper frame transformations
         self.tf_buffer = tf2_ros.Buffer()
@@ -62,6 +68,11 @@ class ZoneWebServer(Node):
         self.set_control_mode_client = self.create_client(SetControlMode, '/set_control_mode')
         self.set_safety_override_client = self.create_client(SetSafetyOverride, '/set_safety_override')
         self.set_estop_client = self.create_client(SetEStop, '/set_estop')
+
+        # Map manager service clients
+        self.upload_map_client = self.create_client(UploadMap, '/map_manager/upload_map')
+        self.set_active_map_client = self.create_client(SetActiveMap, '/map_manager/set_active_map')
+        self.get_active_map_client = self.create_client(GetActiveMap, '/map_manager/get_active_map')
         
         # Publisher for goal poses
         self.goal_pub = self.create_publisher(PoseStamped, '/goal_pose', 10)
@@ -198,8 +209,8 @@ class ZoneWebServer(Node):
         
         self.get_logger().info('Subscribed to /scan (FRONT) and /scan2 (REAR) for lidar data')
         
-        # Load map info
-        self.map_path = os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps/smr_map.yaml')
+        # Load map info - get active map from map manager
+        self.map_path = self._get_active_map_path_from_manager()
         self.zones_file = os.path.expanduser('~/zones.yaml')
         self.paths_file = os.path.expanduser('~/paths.yaml')
         self.layouts_file = os.path.expanduser('~/layouts.yaml')
@@ -248,11 +259,32 @@ class ZoneWebServer(Node):
             except Exception as e:
                 fut.set_exception(e)
         
-        # Schedule ROS work on executor thread
-        self.executor.call_soon_threadsafe(do_ros_work)
+        # Enqueue work to be picked up by the executor timer callback
+        self._ros_call_queue.put((do_ros_work, fut))
         
         # Wait for result from Flask thread
         return fut.result(timeout=timeout)
+
+    def _process_ros_call_queue(self):
+        """Run queued Flask→ROS calls on executor-managed thread(s)."""
+        try:
+            while True:
+                func, fut = self._ros_call_queue.get_nowait()
+                if fut.done():
+                    continue
+                try:
+                    result = func()
+                    fut.set_result(result)
+                except InvalidStateError:
+                    # Future was already completed elsewhere
+                    continue
+                except Exception as e:
+                    try:
+                        fut.set_exception(e)
+                    except InvalidStateError:
+                        pass
+        except queue.Empty:
+            return
     
     def mode_status_callback(self, msg):
         """Track current control mode"""
@@ -850,6 +882,49 @@ class ZoneWebServer(Node):
         except Exception as e:
             self.get_logger().error(f'Failed to save map layers: {e}')
             return False
+
+    # ==== Map manager - Simple threadsafe wrapper ====
+    def _get_active_map_path_from_manager(self):
+        """Get active map path from map manager at startup"""
+        # Wait for service
+        if not self.get_active_map_client.wait_for_service(timeout_sec=3.0):
+            self.get_logger().warn('Map Manager not available at startup, using default map')
+            return os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps/smr_map.yaml')
+        
+        try:
+            req = GetActiveMap.Request()
+            result = self.call_map_service(self.get_active_map_client, req, timeout=3.0)
+            
+            if result and result.success and result.map_yaml_path:
+                self.get_logger().info(f'Loaded active map from manager: {result.map_yaml_path}')
+                return result.map_yaml_path
+            else:
+                self.get_logger().warn('Map Manager returned no active map, using default')
+                return os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps/smr_map.yaml')
+        except Exception as e:
+            self.get_logger().error(f'Failed to get active map: {e}, using default')
+            return os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps/smr_map.yaml')
+    
+    def call_map_service(self, client, request, timeout=5.0):
+        """Generic service caller - thread-safe, works from any thread"""
+        from concurrent.futures import Future as ConcurrentFuture, TimeoutError as ConcurrentTimeoutError
+        import threading
+        
+        result_future = ConcurrentFuture()
+        
+        def done_callback(ros_future):
+            try:
+                result_future.set_result(ros_future.result())
+            except Exception as e:
+                result_future.set_exception(e)
+        
+        ros_future = client.call_async(request)
+        ros_future.add_done_callback(done_callback)
+        
+        try:
+            return result_future.result(timeout=timeout)
+        except ConcurrentTimeoutError:
+            return None
     
     def render_map_with_layers(self):
         """Render map with all editing layers overlaid"""
@@ -1108,7 +1183,7 @@ class ZoneWebServer(Node):
         
         try:
             # Wait for result with timeout
-            result = future.result(timeout_sec=5.0)
+            result = future.result()
             return {'ok': result.ok, 'message': result.message}
         except Exception as e:
             return {'ok': False, 'message': f'Service call failed: {str(e)}'}
@@ -1128,7 +1203,7 @@ class ZoneWebServer(Node):
         future = self.update_zone_params_client.call_async(request)
         
         try:
-            result = future.result(timeout_sec=5.0)
+            result = future.result()
             return {'ok': result.ok, 'message': result.message}
         except Exception as e:
             return {'ok': False, 'message': f'Service call failed: {str(e)}'}
@@ -1149,7 +1224,7 @@ class ZoneWebServer(Node):
         future = self.reorder_zones_client.call_async(request)
         
         try:
-            result = future.result(timeout_sec=5.0)
+            result = future.result()
             return {'ok': result.ok, 'message': result.message}
         except Exception as e:
             return {'ok': False, 'message': f'Service call failed: {str(e)}'}
@@ -2598,10 +2673,36 @@ def export_editor_map():
         return jsonify({'error': 'ROS node not initialized'}), 500
     
     data = request.json
-    output_path = data.get('path', '/tmp/edited_map.pgm')
-    
+    user_path = data.get('path', '')
+
+    # Preferred export locations (kept short and predictable for downloads)
+    maps_dir = os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps')
+    downloads_dir = os.path.expanduser('/home/aun/Downloads/DownloadedMaps')
+    allowed_dirs = [os.path.abspath(maps_dir), os.path.abspath(downloads_dir)]
+
+    os.makedirs(maps_dir, exist_ok=True)
+    os.makedirs(downloads_dir, exist_ok=True)
+
+    # Keep exports inside an allowed directory; normalize filenames
+    if user_path:
+        base_name = os.path.basename(user_path)
+        if not base_name.lower().endswith('.pgm'):
+            base_name = f'{base_name}.pgm'
+
+        chosen_dir = maps_dir
+        if os.path.isabs(user_path):
+            user_dir = os.path.abspath(os.path.dirname(user_path))
+            if any(user_dir.startswith(allowed) for allowed in allowed_dirs):
+                chosen_dir = user_dir
+        output_path = os.path.join(chosen_dir, base_name)
+    else:
+        import datetime
+        stamp = datetime.datetime.now().strftime('%Y%m%d')
+        output_path = os.path.join(maps_dir, f'edited_map_{stamp}.pgm')
+
     success = ros_node.export_edited_map(output_path)
-    return jsonify({'ok': success, 'path': output_path})
+    filename = os.path.basename(output_path)
+    return jsonify({'ok': success, 'path': output_path, 'download': f'/api/map/download/{filename}'})
 
 
 @app.route('/api/editor/map/save_current', methods=['POST'])
@@ -2638,9 +2739,7 @@ def upload_map():
     """Upload a new map (PGM + YAML) via Map Manager service"""
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
-    
-    from zone_nav_interfaces.srv import UploadMap
-    
+
     data = request.json
     map_name = data.get('map_name')
     pgm_base64 = data.get('pgm_base64')
@@ -2649,29 +2748,31 @@ def upload_map():
     if not map_name or not pgm_base64 or not yaml_content:
         return jsonify({'success': False, 'message': 'Missing required data'}), 400
     
-    # Call map manager service
-    client = ros_node.create_client(UploadMap, '/map_manager/upload_map')
-    
-    if not client.wait_for_service(timeout_sec=2.0):
-        return jsonify({'success': False, 'message': 'Map Manager service not available'}), 503
-    
-    request_msg = UploadMap.Request()
-    request_msg.map_name = map_name
-    request_msg.pgm_base64 = pgm_base64
-    request_msg.yaml_content = yaml_content
-    
-    future = client.call_async(request_msg)
-    rclpy.spin_until_future_complete(ros_node, future, timeout_sec=5.0)
-    
-    if future.result() is not None:
-        response = future.result()
+    try:
+        # Check service availability
+        if not ros_node.upload_map_client.wait_for_service(timeout_sec=1.0):
+            return jsonify({'success': False, 'message': 'Map Manager not available'}), 503
+        
+        # Build request
+        req = UploadMap.Request()
+        req.map_name = map_name
+        req.pgm_base64 = pgm_base64
+        req.yaml_content = yaml_content
+        
+        # Call service (thread-safe)
+        result = ros_node.call_map_service(ros_node.upload_map_client, req, timeout=10.0)
+        
+        if result is None:
+            return jsonify({'success': False, 'message': 'Service call timed out'}), 500
+        
         return jsonify({
-            'success': response.success,
-            'message': response.message,
-            'map_path': response.map_path if response.success else ''
-        })
-    else:
-        return jsonify({'success': False, 'message': 'Service call failed'}), 500
+            'success': result.success,
+            'message': result.message,
+            'map_path': result.map_path if result.success else ''
+        }), 200 if result.success else 500
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 
 @app.route('/api/map/set_active', methods=['POST'])
@@ -2679,35 +2780,35 @@ def set_active_map():
     """Set the active map and update all configurations"""
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
-    
-    from zone_nav_interfaces.srv import SetActiveMap
-    
+
     data = request.json
     map_path = data.get('map_path')
     
     if not map_path:
         return jsonify({'success': False, 'message': 'Missing map_path'}), 400
     
-    # Call map manager service
-    client = ros_node.create_client(SetActiveMap, '/map_manager/set_active_map')
-    
-    if not client.wait_for_service(timeout_sec=2.0):
-        return jsonify({'success': False, 'message': 'Map Manager service not available'}), 503
-    
-    request_msg = SetActiveMap.Request()
-    request_msg.map_yaml_path = map_path
-    
-    future = client.call_async(request_msg)
-    rclpy.spin_until_future_complete(ros_node, future, timeout_sec=5.0)
-    
-    if future.result() is not None:
-        response = future.result()
+    try:
+        # Check service availability
+        if not ros_node.set_active_map_client.wait_for_service(timeout_sec=1.0):
+            return jsonify({'success': False, 'message': 'Map Manager not available'}), 503
+        
+        # Build request
+        req = SetActiveMap.Request()
+        req.map_yaml_path = map_path
+        
+        # Call service (thread-safe)
+        result = ros_node.call_map_service(ros_node.set_active_map_client, req, timeout=5.0)
+        
+        if result is None:
+            return jsonify({'success': False, 'message': 'Service call timed out'}), 500
+        
         return jsonify({
-            'success': response.success,
-            'message': response.message
-        })
-    else:
-        return jsonify({'success': False, 'message': 'Service call failed'}), 500
+            'success': result.success,
+            'message': result.message
+        }), 200 if result.success else 500
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 
 @app.route('/api/map/get_active', methods=['GET'])
@@ -2716,47 +2817,99 @@ def get_active_map():
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
-    from zone_nav_interfaces.srv import GetActiveMap
-    
-    # Call map manager service
-    client = ros_node.create_client(GetActiveMap, '/map_manager/get_active_map')
-    
-    if not client.wait_for_service(timeout_sec=2.0):
-        return jsonify({'success': False, 'message': 'Map Manager service not available'}), 503
-    
-    request_msg = GetActiveMap.Request()
-    
-    future = client.call_async(request_msg)
-    rclpy.spin_until_future_complete(ros_node, future, timeout_sec=5.0)
-    
-    if future.result() is not None:
-        response = future.result()
+    try:
+        # Check service availability
+        if not ros_node.get_active_map_client.wait_for_service(timeout_sec=1.0):
+            return jsonify({'success': False, 'message': 'Map Manager not available'}), 503
+        
+        # Build request
+        req = GetActiveMap.Request()
+        
+        # Call service (thread-safe)
+        result = ros_node.call_map_service(ros_node.get_active_map_client, req, timeout=5.0)
+        
+        if result is None:
+            return jsonify({'success': False, 'message': 'Service call timed out'}), 500
+        
         return jsonify({
-            'success': response.success,
-            'map_path': response.map_yaml_path if response.success else '',
-            'message': response.message
-        })
-    else:
-        return jsonify({'success': False, 'message': 'Service call failed'}), 500
+            'success': result.success,
+            'map_path': result.map_yaml_path if result.success else '',
+            'message': result.message
+        }), 200 if result.success else 500
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/map/list', methods=['GET'])
+def list_maps():
+    """List available maps (YAML + matching PGM) from allowed directories"""
+    try:
+        maps_dir = os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps')
+        downloads_dir = os.path.expanduser('/home/aun/Downloads/DownloadedMaps')
+        allowed_dirs = [os.path.abspath(maps_dir), os.path.abspath(downloads_dir)]
+
+        maps = []
+        for base_dir in allowed_dirs:
+            if not os.path.isdir(base_dir):
+                continue
+            for entry in sorted(os.listdir(base_dir)):
+                if not entry.lower().endswith('.yaml'):
+                    continue
+                yaml_path = os.path.join(base_dir, entry)
+                base_name = os.path.splitext(entry)[0]
+                pgm_path = os.path.join(base_dir, f'{base_name}.pgm')
+                maps.append({
+                    'name': base_name,
+                    'yaml_path': yaml_path,
+                    'pgm_exists': os.path.exists(pgm_path),
+                    'location': base_dir
+                })
+        return jsonify({'success': True, 'maps': maps})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/map/reload', methods=['POST'])
+def reload_active_map():
+    """Reload the active map from Map Manager (after switching maps)"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    try:
+        # Get new active map path
+        new_map_path = ros_node._get_active_map_path_from_manager()
+        
+        # Update node's map path
+        ros_node.map_path = new_map_path
+        ros_node.map_info = ros_node.load_map_info()
+        ros_node._load_map_image()
+        
+        return jsonify({
+            'success': True, 
+            'message': 'Map reloaded successfully',
+            'map_path': new_map_path
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @app.route('/api/map/download/<filename>')
 def download_map_file(filename):
     """Download a map file (PGM or YAML)"""
     try:
-        # Get maps directory
         maps_dir = os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps')
-        file_path = os.path.join(maps_dir, filename)
-        
-        # Security check - ensure file is in maps directory
-        if not os.path.abspath(file_path).startswith(os.path.abspath(maps_dir)):
-            return jsonify({'error': 'Invalid file path'}), 403
-        
-        if not os.path.exists(file_path):
-            return jsonify({'error': 'File not found'}), 404
-        
+        downloads_dir = os.path.expanduser('/home/aun/Downloads/DownloadedMaps')
+        allowed_dirs = [os.path.abspath(maps_dir), os.path.abspath(downloads_dir)]
+
         from flask import send_file
-        return send_file(file_path, as_attachment=True, download_name=filename)
+
+        for base_dir in allowed_dirs:
+            file_path = os.path.join(base_dir, filename)
+            if os.path.exists(file_path):
+                return send_file(file_path, as_attachment=True, download_name=filename)
+        
+        return jsonify({'error': 'File not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
