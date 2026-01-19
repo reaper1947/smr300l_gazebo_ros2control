@@ -10,6 +10,8 @@ from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from rclpy.clock import Clock, ClockType
+from rclpy.duration import Duration
+from rclpy.time import Time
 from zone_nav_interfaces.srv import (
     SaveZone, DeleteZone, UpdateZoneParams, ReorderZones,
     SavePath, DeletePath, SaveLayout, LoadLayout, DeleteLayout,
@@ -18,7 +20,7 @@ from zone_nav_interfaces.srv import (
 )
 from zone_nav_interfaces.action import GoToZone as GoToZoneAction, FollowPath as FollowPathAction
 from nav2_msgs.action import NavigateToPose
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist, TransformStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist, TransformStamped, PointStamped
 from nav_msgs.msg import Path
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
@@ -27,7 +29,7 @@ import tf2_ros
 from tf2_ros import TransformException
 from slam_toolbox.srv import SaveMap as SlamSaveMap
 import threading
-from concurrent.futures import Future, TimeoutError as FutureTimeoutError, InvalidStateError
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 import queue
 import yaml
 import os
@@ -40,6 +42,7 @@ import numpy as np
 import signal
 import subprocess
 import time
+import uuid
 
 try:
     import psutil
@@ -275,8 +278,11 @@ class ZoneWebServer(Node):
             'slow_zones': [],
             'restricted': []
         }
-        self.layers_file = os.path.expanduser('~/map_layers.json')
+        self.declare_parameter('layers_file', '~/map_layers.json')
+        layers_param = self.get_parameter('layers_file').get_parameter_value().string_value
+        self.layers_file = os.path.expanduser(layers_param or '~/map_layers.json')
         self.load_map_layers()
+        self._ensure_map_layers_defaults()
         
         self.get_logger().info('Zone Web Server node started')
         self.get_logger().info(f'Map: {self.map_info.get("image_path", "Not found")}')
@@ -292,8 +298,8 @@ class ZoneWebServer(Node):
                 transform = self.tf_buffer.lookup_transform(
                     'map',
                     base_frame,
-                    rclpy.time.Time(),
-                    timeout=rclpy.duration.Duration(seconds=0.2)
+                    Time(),
+                    timeout=Duration(seconds=0.2)
                 )
                 t = transform.transform.translation
                 q = transform.transform.rotation
@@ -307,34 +313,9 @@ class ZoneWebServer(Node):
         return None
     
     def call_ros_from_flask(self, ros_func, timeout=2.0):
-        """Thread-safe wrapper for calling ROS operations from Flask threads.
-        
-        Uses call_soon_threadsafe to schedule ROS work on the executor thread,
-        preventing 'wait set' issues and deadlocks.
-        
-        Args:
-            ros_func: Callable that performs ROS operations (runs in executor thread)
-            timeout: Maximum time to wait for result (seconds)
-            
-        Returns:
-            Result from ros_func
-            
-        Raises:
-            FutureTimeoutError: If operation times out
-        """
+        """Schedule ros_func on ROS executor via queue, wait in Flask thread."""
         fut = Future()
-        
-        def do_ros_work():
-            try:
-                result = ros_func()
-                fut.set_result(result)
-            except Exception as e:
-                fut.set_exception(e)
-        
-        # Enqueue work to be picked up by the executor timer callback
-        self._ros_call_queue.put((do_ros_work, fut))
-        
-        # Wait for result from Flask thread
+        self._ros_call_queue.put((ros_func, fut))
         return fut.result(timeout=timeout)
 
     def _process_ros_call_queue(self):
@@ -345,15 +326,11 @@ class ZoneWebServer(Node):
                 if fut.done():
                     continue
                 try:
-                    result = func()
-                    fut.set_result(result)
-                except InvalidStateError:
-                    # Future was already completed elsewhere
-                    continue
+                    fut.set_result(func())
                 except Exception as e:
                     try:
                         fut.set_exception(e)
-                    except InvalidStateError:
+                    except Exception:
                         pass
         except queue.Empty:
             return
@@ -808,6 +785,7 @@ class ZoneWebServer(Node):
                 'map_path': self.map_path,
                 'zones': zones,
                 'paths': paths,
+                'filters': self._filters_only(),
                 'created': self.get_clock().now().to_msg().sec
             }
             
@@ -849,6 +827,13 @@ class ZoneWebServer(Node):
                 self.map_path = layout['map_path']
                 self.map_info = self.load_map_info()
                 self._load_map_image()
+
+            filters = layout.get('filters', {
+                'no_go_zones': [],
+                'restricted': [],
+                'slow_zones': []
+            })
+            self._set_filters_only(filters)
             
             self.current_layout = name
             zones_count = len(layout.get('zones', {}))
@@ -1008,9 +993,28 @@ class ZoneWebServer(Node):
             try:
                 with open(self.layers_file, 'r') as f:
                     self.map_layers = json.load(f)
+                self._ensure_map_layers_defaults()
+                if self._ensure_filter_ids():
+                    self.save_map_layers()
                 self.get_logger().info(f'Loaded {sum(len(v) for v in self.map_layers.values())} map layer objects')
             except Exception as e:
                 self.get_logger().error(f'Failed to load map layers: {e}')
+
+    def _ensure_map_layers_defaults(self):
+        if not isinstance(self.map_layers, dict):
+            self.map_layers = {}
+        for key in ('obstacles', 'no_go_zones', 'slow_zones', 'restricted'):
+            if not isinstance(self.map_layers.get(key), list):
+                self.map_layers[key] = []
+
+    def _ensure_filter_ids(self):
+        changed = False
+        for key in ('no_go_zones', 'restricted', 'slow_zones'):
+            for obj in self.map_layers.get(key, []):
+                if isinstance(obj, dict) and 'id' not in obj:
+                    obj['id'] = uuid.uuid4().hex
+                    changed = True
+        return changed
     
     def save_map_layers(self):
         """Save map editing layers to file"""
@@ -1022,6 +1026,64 @@ class ZoneWebServer(Node):
         except Exception as e:
             self.get_logger().error(f'Failed to save map layers: {e}')
             return False
+
+    def _filters_only(self):
+        self._ensure_map_layers_defaults()
+        return {
+            'no_go_zones': list(self.map_layers.get('no_go_zones', [])),
+            'restricted': list(self.map_layers.get('restricted', [])),
+            'slow_zones': list(self.map_layers.get('slow_zones', []))
+        }
+
+    def _set_filters_only(self, filters):
+        self._ensure_map_layers_defaults()
+        self.map_layers['no_go_zones'] = filters.get('no_go_zones', [])
+        self.map_layers['restricted'] = filters.get('restricted', [])
+        self.map_layers['slow_zones'] = filters.get('slow_zones', [])
+        self._ensure_filter_ids()
+        self.save_map_layers()
+
+    def add_filter_object(self, layer_type, obj):
+        if layer_type not in ('no_go_zones', 'restricted', 'slow_zones'):
+            return False, 'Invalid filter layer'
+        if not isinstance(obj, dict):
+            return False, 'Invalid object'
+        self._ensure_map_layers_defaults()
+        if 'id' not in obj:
+            obj['id'] = uuid.uuid4().hex
+        self.map_layers[layer_type].append(obj)
+        self.save_map_layers()
+        return True, obj['id']
+
+    def delete_filter_object(self, layer_type, obj_id):
+        if layer_type not in ('no_go_zones', 'restricted', 'slow_zones'):
+            return False, 'Invalid filter layer'
+        if not obj_id:
+            return False, 'Missing id'
+        self._ensure_map_layers_defaults()
+        before = len(self.map_layers[layer_type])
+        self.map_layers[layer_type] = [
+            o for o in self.map_layers[layer_type]
+            if o.get('id') != obj_id
+        ]
+        after = len(self.map_layers[layer_type])
+        if after == before:
+            return False, 'Not found'
+        self.save_map_layers()
+        return True, 'Deleted'
+
+    def clear_filter_layer(self, layer_type):
+        self._ensure_map_layers_defaults()
+        if layer_type == 'all':
+            self.map_layers['no_go_zones'] = []
+            self.map_layers['restricted'] = []
+            self.map_layers['slow_zones'] = []
+        elif layer_type in ('no_go_zones', 'restricted', 'slow_zones'):
+            self.map_layers[layer_type] = []
+        else:
+            return False, 'Invalid layer'
+        self.save_map_layers()
+        return True, 'Cleared'
 
     # ==== Map manager - Simple threadsafe wrapper ====
     def _get_active_map_path_from_manager(self):
@@ -2902,6 +2964,45 @@ def get_editor_layers():
         return jsonify({'error': 'ROS node not initialized'}), 500
     
     return jsonify(ros_node.map_layers)
+
+
+@app.route('/api/filters', methods=['GET'])
+def get_filters():
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    return jsonify(ros_node._filters_only())
+
+
+@app.route('/api/filters/add', methods=['POST'])
+def add_filter():
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    data = request.json or {}
+    layer = data.get('layer')
+    obj = data.get('obj', {})
+    ok, result = ros_node.add_filter_object(layer, obj)
+    return jsonify({'ok': ok, 'result': result}), (200 if ok else 400)
+
+
+@app.route('/api/filters/delete', methods=['POST'])
+def delete_filter():
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    data = request.json or {}
+    layer = data.get('layer')
+    obj_id = data.get('id')
+    ok, msg = ros_node.delete_filter_object(layer, obj_id)
+    return jsonify({'ok': ok, 'message': msg}), (200 if ok else 404)
+
+
+@app.route('/api/filters/clear', methods=['POST'])
+def clear_filters():
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+    data = request.json or {}
+    layer = data.get('layer', 'all')
+    ok, msg = ros_node.clear_filter_layer(layer)
+    return jsonify({'ok': ok, 'message': msg}), (200 if ok else 400)
 
 
 @app.route('/api/editor/layer/add', methods=['POST'])

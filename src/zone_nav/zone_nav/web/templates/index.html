@@ -538,6 +538,105 @@
             box-shadow: 0 0 8px rgba(46, 160, 67, 0.3);
         }
 
+        .filter-tools {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .filter-btn {
+            flex: 1;
+            min-width: 90px;
+            padding: 8px 10px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-secondary);
+            border-radius: 6px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-size: 12px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .filter-btn:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--border-secondary);
+        }
+
+        .filter-btn.active {
+            background: rgba(46, 160, 67, 0.15);
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+        }
+
+        .filter-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .filter-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 10px;
+            max-height: 180px;
+            overflow-y: auto;
+        }
+
+        .filter-layer-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+
+        .filter-layer-badge {
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .filter-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 6px 8px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-primary);
+            border-radius: 6px;
+        }
+
+        .filter-item-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .filter-item-title {
+            font-size: 12px;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .filter-item-meta {
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+
         .status {
             padding: 10px 12px;
             border-radius: 6px;
@@ -1257,6 +1356,67 @@
 
                     <div class="card">
                         <div class="card-header">
+                            <h3 class="card-title">Filters</h3>
+                        </div>
+                        <div class="filter-tools">
+                            <div class="filter-row">
+                                <button class="filter-btn active" id="filter-layer-no-go"
+                                    onclick="setFilterLayer('no_go_zones')">
+                                    Keepout
+                                </button>
+                                <button class="filter-btn" id="filter-layer-restricted"
+                                    onclick="setFilterLayer('restricted')">
+                                    Restricted
+                                </button>
+                                <button class="filter-btn" id="filter-layer-slow"
+                                    onclick="setFilterLayer('slow_zones')">
+                                    Slow
+                                </button>
+                            </div>
+                            <div class="filter-row">
+                                <button class="filter-btn active" id="filter-shape-rect"
+                                    onclick="setFilterShape('rectangle')">
+                                    Rectangle
+                                </button>
+                                <button class="filter-btn" id="filter-shape-poly"
+                                    onclick="setFilterShape('polygon')">
+                                    Polygon
+                                </button>
+                            </div>
+                            <div class="input-group" id="filter-speed-group" style="display: none; margin: 0;">
+                                <label>Speed percent:</label>
+                                <input type="number" id="filter-speed-percent" value="50" min="1" max="100" step="1">
+                            </div>
+                            <div class="filter-actions">
+                                <button class="btn-save" id="filter-draw-btn" onclick="startFilterDraw()">
+                                    Start Draw
+                                </button>
+                                <button class="btn-save" id="filter-finish-btn"
+                                    style="display: none; background: #4CAF50;" onclick="finishFilterPolygon()">
+                                    Finish Polygon
+                                </button>
+                                <button class="btn-delete" id="filter-cancel-btn" onclick="cancelFilterDraw()">
+                                    Cancel
+                                </button>
+                            </div>
+                            <div class="filter-actions">
+                                <button class="btn-delete" onclick="clearFilterLayer(activeFilterLayer)">
+                                    Clear Layer
+                                </button>
+                                <button class="btn-delete" onclick="clearFilterLayer('all')">
+                                    Clear All
+                                </button>
+                            </div>
+                        </div>
+                        <div class="filter-list" id="filter-list">
+                            <div style="color: #888; font-size: 12px; text-align: center; padding: 10px;">
+                                No filters
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
                             <h3 class="card-title">Add New Zone</h3>
                         </div>
                         <div class="zone-type-selector">
@@ -1587,6 +1747,21 @@
                 let currentPathWaypoint = 0;  // Current waypoint being navigated to
                 let alternativePathWarningShown = false;  // Track if we showed path deviation warning
 
+                // Filter layers
+                const FILTER_LAYER_META = {
+                    no_go_zones: { label: 'Keepout', color: '#f44336', fill: 'rgba(244, 67, 54, 0.18)' },
+                    restricted: { label: 'Restricted', color: '#FFC107', fill: 'rgba(255, 193, 7, 0.18)' },
+                    slow_zones: { label: 'Slow', color: '#2196F3', fill: 'rgba(33, 150, 243, 0.18)' }
+                };
+                let filterLayers = { no_go_zones: [], restricted: [], slow_zones: [] };
+                let activeFilterLayer = 'no_go_zones';
+                let activeFilterShape = 'rectangle';
+                let filterDrawMode = null; // 'rectangle' | 'polygon'
+                let filterPolygonPoints = [];
+                let filterRectStart = null;
+                let filterRectCurrent = null;
+                let filterCursorWorld = null;
+
                 // Safety state tracking
                 let previousSafetyStopActive = false;
 
@@ -1715,6 +1890,285 @@
                     }
                 }
 
+                function setFilterLayer(layer) {
+                    activeFilterLayer = layer;
+                    updateFilterControls();
+                }
+
+                function setFilterShape(shape) {
+                    activeFilterShape = shape;
+                    updateFilterControls();
+                }
+
+                function updateFilterControls() {
+                    const layerButtons = {
+                        no_go_zones: document.getElementById('filter-layer-no-go'),
+                        restricted: document.getElementById('filter-layer-restricted'),
+                        slow_zones: document.getElementById('filter-layer-slow')
+                    };
+                    Object.entries(layerButtons).forEach(([key, btn]) => {
+                        if (btn) btn.classList.toggle('active', key === activeFilterLayer);
+                    });
+
+                    const shapeButtons = {
+                        rectangle: document.getElementById('filter-shape-rect'),
+                        polygon: document.getElementById('filter-shape-poly')
+                    };
+                    Object.entries(shapeButtons).forEach(([key, btn]) => {
+                        if (btn) btn.classList.toggle('active', key === activeFilterShape);
+                    });
+
+                    const speedGroup = document.getElementById('filter-speed-group');
+                    if (speedGroup) {
+                        speedGroup.style.display = activeFilterLayer === 'slow_zones' ? 'block' : 'none';
+                    }
+
+                    const finishBtn = document.getElementById('filter-finish-btn');
+                    if (finishBtn) {
+                        finishBtn.style.display = filterDrawMode === 'polygon' ? 'inline-block' : 'none';
+                    }
+                }
+
+                function startFilterDraw() {
+                    if (!mapReady) {
+                        showStatus('Map not ready for drawing', 'error');
+                        return;
+                    }
+                    if (isDrawingPath || settingOrientation) {
+                        showStatus('Finish path drawing or zone placement first', 'error');
+                        return;
+                    }
+
+                    filterDrawMode = activeFilterShape;
+                    filterPolygonPoints = [];
+                    filterRectStart = null;
+                    filterRectCurrent = null;
+                    filterCursorWorld = null;
+                    updateFilterControls();
+
+                    if (filterDrawMode === 'polygon') {
+                        showStatus('Click to add polygon points, then finish', 'info');
+                    } else {
+                        showStatus('Drag on the map to draw a rectangle', 'info');
+                    }
+                    drawMap();
+                }
+
+                function cancelFilterDraw() {
+                    filterDrawMode = null;
+                    filterPolygonPoints = [];
+                    filterRectStart = null;
+                    filterRectCurrent = null;
+                    filterCursorWorld = null;
+                    updateFilterControls();
+                    drawMap();
+                }
+
+                function finishFilterPolygon() {
+                    if (filterDrawMode !== 'polygon') {
+                        return;
+                    }
+                    if (filterPolygonPoints.length < 3) {
+                        showStatus('Polygon needs at least 3 points', 'error');
+                        return;
+                    }
+                    const obj = { type: 'polygon', points: filterPolygonPoints.slice() };
+                    applyFilterSpeedIfNeeded(obj);
+                    addFilterObject(activeFilterLayer, obj);
+                    filterPolygonPoints = [];
+                    drawMap();
+                }
+
+                function applyFilterSpeedIfNeeded(obj) {
+                    if (activeFilterLayer !== 'slow_zones') {
+                        return;
+                    }
+                    const speedInput = document.getElementById('filter-speed-percent');
+                    const raw = speedInput ? parseInt(speedInput.value, 10) : 50;
+                    const speedPercent = Math.max(1, Math.min(raw || 50, 100));
+                    obj.speed_percent = speedPercent;
+                }
+
+                function addFilterObject(layer, obj) {
+                    fetch('/api/filters/add', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ layer, obj })
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.ok) {
+                                showStatus('Filter added', 'success');
+                                loadFilters();
+                            } else {
+                                showStatus(data.result || 'Failed to add filter', 'error');
+                            }
+                        })
+                        .catch(error => {
+                            showStatus('Error: ' + error, 'error');
+                        });
+                }
+
+                async function clearFilterLayer(layer) {
+                    const meta = FILTER_LAYER_META[layer];
+                    const label = layer === 'all' ? 'all filters' : `${meta ? meta.label : layer} filters`;
+                    const confirmed = await showConfirm(`Clear ${label}?`, 'Clear', 'Cancel');
+                    if (!confirmed) return;
+                    fetch('/api/filters/clear', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ layer })
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.ok) {
+                                showStatus(data.message || 'Filters cleared', 'success');
+                                loadFilters();
+                            } else {
+                                showStatus(data.message || 'Failed to clear filters', 'error');
+                            }
+                        })
+                        .catch(error => {
+                            showStatus('Error: ' + error, 'error');
+                        });
+                }
+
+                async function deleteFilterObject(layer, objId) {
+                    const confirmed = await showConfirm('Delete this filter?', 'Delete', 'Cancel');
+                    if (!confirmed) return;
+                    fetch('/api/filters/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ layer, id: objId })
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.ok) {
+                                showStatus('Filter deleted', 'success');
+                                loadFilters();
+                            } else {
+                                showStatus(data.message || 'Failed to delete filter', 'error');
+                            }
+                        })
+                        .catch(error => {
+                            showStatus('Error: ' + error, 'error');
+                        });
+                }
+
+                function loadFilters() {
+                    fetch('/api/filters')
+                        .then(response => response.json())
+                        .then(data => {
+                            filterLayers = {
+                                no_go_zones: data.no_go_zones || [],
+                                restricted: data.restricted || [],
+                                slow_zones: data.slow_zones || []
+                            };
+                            renderFilterList();
+                            drawMap();
+                        })
+                        .catch(error => {
+                            console.error('Error loading filters:', error);
+                        });
+                }
+
+                function renderFilterList() {
+                    const list = document.getElementById('filter-list');
+                    if (!list) return;
+                    list.innerHTML = '';
+                    let total = 0;
+
+                    Object.entries(FILTER_LAYER_META).forEach(([key, meta]) => {
+                        const items = filterLayers[key] || [];
+                        total += items.length;
+
+                        const header = document.createElement('div');
+                        header.className = 'filter-layer-header';
+                        header.innerHTML = `<span class="filter-layer-badge" style="background:${meta.fill}; color:${meta.color}; border:1px solid ${meta.color};">${meta.label}</span><span>${items.length}</span>`;
+                        list.appendChild(header);
+
+                        if (items.length === 0) {
+                            const empty = document.createElement('div');
+                            empty.className = 'filter-item';
+                            empty.style.opacity = '0.6';
+                            empty.innerHTML = `<div class="filter-item-info"><div class="filter-item-title">No entries</div></div>`;
+                            list.appendChild(empty);
+                            return;
+                        }
+
+                        items.forEach(obj => {
+                            const row = document.createElement('div');
+                            row.className = 'filter-item';
+
+                            const info = document.createElement('div');
+                            info.className = 'filter-item-info';
+
+                            const title = document.createElement('div');
+                            title.className = 'filter-item-title';
+                            title.textContent = `${meta.label} ${formatFilterType(obj, key)}`;
+
+                            const metaLine = document.createElement('div');
+                            metaLine.className = 'filter-item-meta';
+                            metaLine.textContent = formatFilterMeta(obj, key);
+
+                            info.appendChild(title);
+                            info.appendChild(metaLine);
+
+                            const actions = document.createElement('div');
+                            const delBtn = document.createElement('button');
+                            delBtn.className = 'btn-delete';
+                            delBtn.style.padding = '4px 10px';
+                            delBtn.style.fontSize = '11px';
+                            delBtn.textContent = 'Delete';
+
+                            if (obj.id) {
+                                delBtn.onclick = () => deleteFilterObject(key, obj.id);
+                            } else {
+                                delBtn.disabled = true;
+                                delBtn.style.opacity = '0.5';
+                                delBtn.title = 'Legacy filter (no id)';
+                            }
+
+                            actions.appendChild(delBtn);
+
+                            row.appendChild(info);
+                            row.appendChild(actions);
+                            list.appendChild(row);
+                        });
+                    });
+
+                    if (total === 0) {
+                        list.innerHTML = '<div style="color: #888; font-size: 12px; text-align: center; padding: 10px;">No filters</div>';
+                    }
+                }
+
+                function formatFilterType(obj, layer) {
+                    const type = obj.type || 'shape';
+                    if (type === 'polygon') {
+                        const count = (obj.points || []).length;
+                        return `Polygon (${count} pts)`;
+                    }
+                    if (type === 'rectangle') {
+                        return 'Rectangle';
+                    }
+                    if (type === 'circle') {
+                        return 'Circle';
+                    }
+                    return type;
+                }
+
+                function formatFilterMeta(obj, layer) {
+                    const parts = [];
+                    if (layer === 'slow_zones') {
+                        const pct = obj.speed_percent != null ? obj.speed_percent : 50;
+                        parts.push(`${pct}% speed`);
+                    }
+                    if (obj.id) {
+                        parts.push(`id:${obj.id.slice(0, 6)}`);
+                    }
+                    return parts.join(' · ');
+                }
+
                 async function stopPathFollowing() {
                     const confirmed = await showConfirm('Stop path following?', 'Stop', 'Cancel');
                     if (!confirmed) return;
@@ -1821,6 +2275,8 @@
                     loadZones();
                     loadSavedPaths();
                     loadLayoutsUI();
+                    loadFilters();
+                    updateFilterControls();
                     loadRobotPose();
                     loadEStopStatus();
                     loadSafetyStatus();
@@ -1890,14 +2346,31 @@
 
 
                 function loadMap() {
-                    // Prefer backend /api/map + /api/map/live because it uses TRANSIENT_LOCAL QoS
-                    // (so you get the latched /map even if you connect after map_server publishes once).
-                    loadStaticMap();
-                    refreshLiveMap();
-                    setInterval(refreshLiveMap, 750);
-
-                    // If you still want rosbridge for other realtime topics later, you can keep this:
-                    // initRosbridgeMap();
+                    fetch('/api/map')
+                        .then(response => response.json())
+                        .then(data => {
+                            mapData = data;
+                            const img = new Image();
+                            img.onload = function() {
+                                canvas.width = window.innerWidth - 320;
+                                canvas.height = window.innerHeight;
+                                mapData.image = img;
+                                mapReady = true;
+                                
+                                // Center the map
+                                offsetX = (canvas.width - img.width) / 2;
+                                offsetY = (canvas.height - img.height) / 2;
+                                
+                                drawMap();
+                            };
+                            img.onerror = function() {
+                                showStatus('Failed to load map image', 'error');
+                            };
+                            img.src = 'data:image/png;base64,' + data.image;
+                        })
+                        .catch(error => {
+                            showStatus('Failed to load map', 'error');
+                        });
                 }
 
                 function initRosbridgeMap() {
@@ -2425,6 +2898,9 @@
                     ctx.drawImage(mapData.image, 0, 0);
                     ctx.restore();
 
+                    drawFilterLayers();
+                    drawFilterPreview();
+
                     // Draw zones
                     for (const [name, zone] of Object.entries(zones)) {
                         const [px, py] = worldToPixel(zone.position.x, zone.position.y);
@@ -2798,6 +3274,147 @@
                     }
                 }
 
+                function drawFilterLayers() {
+                    if (!filterLayers) return;
+                    Object.entries(FILTER_LAYER_META).forEach(([key, meta]) => {
+                        const items = filterLayers[key] || [];
+                        if (!items.length) return;
+                        items.forEach(obj => {
+                            drawFilterShape(obj, meta);
+                            if (key === 'slow_zones') {
+                                drawSpeedLabel(obj);
+                            }
+                        });
+                    });
+                }
+
+                function drawFilterPreview() {
+                    if (filterDrawMode === 'rectangle' && filterRectStart && filterRectCurrent) {
+                        ctx.save();
+                        ctx.setLineDash([6, 4]);
+                        drawFilterRect(filterRectStart, filterRectCurrent, {
+                            stroke: '#ffffff',
+                            fill: 'rgba(255, 255, 255, 0.08)'
+                        });
+                        ctx.restore();
+                    }
+
+                    if (filterDrawMode === 'polygon' && filterPolygonPoints.length > 0) {
+                        ctx.save();
+                        ctx.setLineDash([6, 4]);
+                        const preview = filterCursorWorld ? filterPolygonPoints.concat([filterCursorWorld]) : filterPolygonPoints;
+                        drawFilterPolygon(preview, {
+                            stroke: '#ffffff',
+                            fill: 'rgba(255, 255, 255, 0.06)'
+                        }, false);
+                        ctx.restore();
+                    }
+                }
+
+                function drawFilterShape(obj, meta) {
+                    const type = obj.type || 'rectangle';
+                    const style = { stroke: meta.color, fill: meta.fill };
+                    if (type === 'rectangle') {
+                        const start = { x: obj.x1, y: obj.y1 };
+                        const end = { x: obj.x2, y: obj.y2 };
+                        drawFilterRect(start, end, style);
+                    } else if (type === 'polygon') {
+                        const points = (obj.points || []).map(p => ({ x: p.x, y: p.y }));
+                        drawFilterPolygon(points, style, true);
+                    } else if (type === 'circle') {
+                        drawFilterCircle(obj, style);
+                    }
+                }
+
+                function drawFilterRect(start, end, style) {
+                    if (!start || !end) return;
+                    const [px1, py1] = worldToPixel(start.x, start.y);
+                    const [px2, py2] = worldToPixel(end.x, end.y);
+                    const left = Math.min(px1, px2);
+                    const top = Math.min(py1, py2);
+                    const width = Math.abs(px2 - px1);
+                    const height = Math.abs(py2 - py1);
+                    ctx.save();
+                    ctx.fillStyle = style.fill;
+                    ctx.strokeStyle = style.stroke;
+                    ctx.lineWidth = 2;
+                    ctx.fillRect(left, top, width, height);
+                    ctx.strokeRect(left, top, width, height);
+                    ctx.restore();
+                }
+
+                function drawFilterPolygon(points, style, closePath) {
+                    if (!points || points.length < 2) return;
+                    const [startX, startY] = worldToPixel(points[0].x, points[0].y);
+                    ctx.save();
+                    ctx.fillStyle = style.fill;
+                    ctx.strokeStyle = style.stroke;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    for (let i = 1; i < points.length; i++) {
+                        const [px, py] = worldToPixel(points[i].x, points[i].y);
+                        ctx.lineTo(px, py);
+                    }
+                    if (closePath) {
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                function drawFilterCircle(obj, style) {
+                    if (obj.x == null || obj.y == null || obj.radius == null) return;
+                    const [cx, cy] = worldToPixel(obj.x, obj.y);
+                    const radiusPx = obj.radius / mapData.resolution * scale;
+                    ctx.save();
+                    ctx.fillStyle = style.fill;
+                    ctx.strokeStyle = style.stroke;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, radiusPx, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                function drawSpeedLabel(obj) {
+                    const pct = obj.speed_percent != null ? obj.speed_percent : 50;
+                    let cx = null;
+                    let cy = null;
+                    if (obj.type === 'polygon' && Array.isArray(obj.points) && obj.points.length) {
+                        const sum = obj.points.reduce((acc, p) => {
+                            acc.x += p.x;
+                            acc.y += p.y;
+                            return acc;
+                        }, { x: 0, y: 0 });
+                        cx = sum.x / obj.points.length;
+                        cy = sum.y / obj.points.length;
+                    } else if (obj.type === 'rectangle') {
+                        cx = (obj.x1 + obj.x2) / 2;
+                        cy = (obj.y1 + obj.y2) / 2;
+                    } else if (obj.type === 'circle') {
+                        cx = obj.x;
+                        cy = obj.y;
+                    }
+                    if (cx == null || cy == null) return;
+                    const [px, py] = worldToPixel(cx, cy);
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                    ctx.strokeStyle = '#2196F3';
+                    ctx.lineWidth = 1;
+                    ctx.font = 'bold 11px Arial';
+                    const text = `${pct}%`;
+                    const w = ctx.measureText(text).width;
+                    ctx.fillRect(px - w / 2 - 4, py - 18, w + 8, 16);
+                    ctx.strokeRect(px - w / 2 - 4, py - 18, w + 8, 16);
+                    ctx.fillStyle = '#2196F3';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(text, px, py - 6);
+                    ctx.restore();
+                }
+
                 function worldToPixel(wx, wy) {
                     if (!mapData) return [0, 0];
 
@@ -2841,6 +3458,17 @@
 
                     const [wx, wy] = pixelToWorld(x, y);
 
+                    if (filterDrawMode === 'polygon') {
+                        filterPolygonPoints.push({ x: wx, y: wy });
+                        filterCursorWorld = { x: wx, y: wy };
+                        drawMap();
+                        return;
+                    }
+
+                    if (filterDrawMode === 'rectangle') {
+                        return;
+                    }
+
                     if (isDrawingPath) {
                         // Add point to drawn path
                         drawnPath.push({ x: wx, y: wy });
@@ -2875,6 +3503,16 @@
                 }
 
                 function onMouseDown(e) {
+                    if (filterDrawMode === 'rectangle' && e.button === 0) {
+                        const rect = canvas.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const y = e.clientY - rect.top;
+                        const [wx, wy] = pixelToWorld(x, y);
+                        filterRectStart = { x: wx, y: wy };
+                        filterRectCurrent = { x: wx, y: wy };
+                        drawMap();
+                        return;
+                    }
                     if (e.button === 2 || e.ctrlKey) { // Right click or Ctrl+click
                         isDragging = true;
                         dragStartX = e.clientX - offsetX;
@@ -2885,28 +3523,61 @@
                 }
 
                 function onMouseMove(e) {
-                    if (isDragging && !settingOrientation) {
-                        offsetX = e.clientX - dragStartX;
-                        offsetY = e.clientY - dragStartY;
-                        drawMap();
-                    } else if (settingOrientation) {
-                        // Show live orientation preview
-                        const rect = canvas.getBoundingClientRect();
-                        const x = e.clientX - rect.left;
-                        const y = e.clientY - rect.top;
-                        const [wx, wy] = pixelToWorld(x, y);
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const [wx, wy] = pixelToWorld(x, y);
 
-                        // Update orientation preview
+                    if (settingOrientation) {
+                        // Show live orientation preview
                         const dx = wx - orientationStartX;
                         const dy = wy - orientationStartY;
                         const theta = Math.atan2(dy, dx);
                         document.getElementById('zone-theta').value = theta.toFixed(3);
+                        drawMap();
+                        return;
+                    }
 
+                    if (isDragging) {
+                        offsetX = e.clientX - dragStartX;
+                        offsetY = e.clientY - dragStartY;
+                        drawMap();
+                        return;
+                    }
+
+                    if (filterDrawMode === 'rectangle' && filterRectStart) {
+                        filterRectCurrent = { x: wx, y: wy };
+                        drawMap();
+                        return;
+                    }
+
+                    if (filterDrawMode === 'polygon') {
+                        filterCursorWorld = { x: wx, y: wy };
                         drawMap();
                     }
                 }
 
                 function onMouseUp(e) {
+                    if (filterDrawMode === 'rectangle' && filterRectStart) {
+                        const rect = canvas.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const y = e.clientY - rect.top;
+                        const [wx, wy] = pixelToWorld(x, y);
+                        filterRectCurrent = { x: wx, y: wy };
+                        const obj = {
+                            type: 'rectangle',
+                            x1: filterRectStart.x,
+                            y1: filterRectStart.y,
+                            x2: filterRectCurrent.x,
+                            y2: filterRectCurrent.y
+                        };
+                        applyFilterSpeedIfNeeded(obj);
+                        addFilterObject(activeFilterLayer, obj);
+                        filterRectStart = null;
+                        filterRectCurrent = null;
+                        drawMap();
+                        return;
+                    }
                     if (editingZone && isDragging) {
                         // Save the edited zone position
                         saveEditedZone(editingZone);
@@ -3666,6 +4337,7 @@
                                 loadLayoutsUI();
                                 loadZones();
                                 loadSavedPaths();
+                                loadFilters();
                                 drawMap();
                             } else {
                                 showStatus(data.message || 'Failed to load layout', 'error');
@@ -4458,6 +5130,7 @@
                         };
 
                         row.appendChild(info);
+                        buttons.appendChild(loadBtn);
                         row.appendChild(buttons);
                         container.appendChild(row);
                     });

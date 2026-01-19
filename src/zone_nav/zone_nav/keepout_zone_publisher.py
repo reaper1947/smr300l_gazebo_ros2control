@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
 """
-Keepout + Speed Zone Publisher for Nav2 (Costmap Filters)
+Zone Publisher for Nav2 Costmap Filters (Keepout + Speed)
 
-Goals:
-- Publish filter masks + CostmapFilterInfo reliably (TRANSIENT_LOCAL latch)
-- Avoid /map QoS mismatch issues (subscribe VOLATILE)
-- Avoid race with Nav2 lifecycle/composition by waiting for costmap nodes
-- Correct speed filter semantics (base + multiplier * mask_value)
+This node:
+- Subscribes to /map (OccupancyGrid) to match its size/resolution/origin
+- Loads zones from a JSON file (default: ~/map_layers.json)
+- Rasterizes zones into two masks:
+    /keepout_filter_mask   (0 free, 100 keepout)
+    /speed_filter_mask     (1..100 speed percent; 100 = full speed)
+- Publishes CostmapFilterInfo:
+    Keepout: /costmap_filter_info  (type=0)  <-- matches your Nav2 keepout_filter.filter_info_topic
+    Speed:   /speed_filter_info    (type=1)
 
-Notes:
-- Keepout interpretation differs across setups; toggle ZERO_MEANS_KEEPOUT.
-- Speed mask values are typically 0..100 (percent of max) depending on params.
+Important:
+- Your Nav2 params currently show:
+    keepout_filter.filter_info_topic = /costmap_filter_info
+    speed_filter.filter_info_topic   = /speed_filter_info
+  So we publish exactly those topics.
 """
 
-import rclpy
 import os
 import json
 import math
+
+import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
 
@@ -28,49 +35,32 @@ class ZonePublisher(Node):
     def __init__(self):
         super().__init__("zone_publisher")
 
-        # -----------------------------
-        # Toggle: what does 0 mean in your keepout mask?
-        # True  => 0 = KEEP-OUT, 100 = FREE
-        # False => 0 = FREE,     100 = KEEP-OUT
-        # -----------------------------
-        self.ZERO_MEANS_KEEPOUT = True
+        # -----------------------
+        # Parameters
+        # -----------------------
+        self.declare_parameter("layers_file", os.path.expanduser("~/map_layers.json"))
+        self.declare_parameter("enable_speed_filter", True)
+        self.declare_parameter("max_speed_mps", 0.30)   # used to convert % -> m/s
+        self.declare_parameter("publish_rate_hz", 1.0)  # re-publish periodically for robustness
 
-        # Default maximum speed (m/s) used by speed filter math (see below)
-        self.MAX_SPEED_MPS = 0.30
+        layers_param = self.get_parameter("layers_file").value
+        self.layers_file = os.path.expanduser(layers_param or "~/map_layers.json")
+        self.enable_speed_filter = bool(self.get_parameter("enable_speed_filter").value)
+        self.max_speed_mps = float(self.get_parameter("max_speed_mps").value)
+        self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
 
-        # Map editor layers file (written by zone_web_ui)
-        self.layers_file = os.path.expanduser('~/map_layers.json')
-
-        # Allow tuning via ROS params
-        self.declare_parameter('zero_means_keepout', self.ZERO_MEANS_KEEPOUT)
-        self.declare_parameter('max_speed_mps', self.MAX_SPEED_MPS)
-        self.declare_parameter('enable_speed_filter', True)
-        self.declare_parameter('layers_file', self.layers_file)
-
-        self.ZERO_MEANS_KEEPOUT = bool(self.get_parameter('zero_means_keepout').value)
-        self.MAX_SPEED_MPS = float(self.get_parameter('max_speed_mps').value)
-        self.enable_speed_filter = bool(self.get_parameter('enable_speed_filter').value)
-        self.layers_file = self.get_parameter('layers_file').value or self.layers_file
-
-        # How many times to republish after first publish (helps discovery)
-        # Set to 0 to publish exactly once (preferred to avoid costmap thrash)
-        self.REPUBLISH_COUNT = 0
-        self.REPUBLISH_PERIOD_SEC = 0.5
-
-        # Track map editor layers and changes
-        self._layers = {'no_go_zones': [], 'slow_zones': [], 'restricted': []}
-        self._layers_mtime = None
-
-        # ---- QoS profiles ----
-        # Subscribe to /map with VOLATILE (matches nav2_map_server default)
+        # -----------------------
+        # QoS
+        # -----------------------
+        # /map is typically latched by map_server
         self.map_qos = QoSProfile(
-            durability=DurabilityPolicy.VOLATILE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
             reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
-            depth=5,
+            depth=1,
         )
 
-        # Publish masks and filter_info latched (Nav2 can join later)
+        # costmap filters should be latched so Nav2 can join later
         self.latched_qos = QoSProfile(
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -78,13 +68,19 @@ class ZonePublisher(Node):
             depth=1,
         )
 
-        # ---- Publishers (latched) ----
-        self.keepout_filter_info_pub = self.create_publisher(
+        # -----------------------
+        # Publishers
+        # -----------------------
+        # Keepout info MUST be on /costmap_filter_info because your keepout_filter listens there
+        self.keepout_info_pub = self.create_publisher(
             CostmapFilterInfo, "/costmap_filter_info", self.latched_qos
         )
-        self.speed_filter_info_pub = self.create_publisher(
+
+        # Speed info is already on /speed_filter_info
+        self.speed_info_pub = self.create_publisher(
             CostmapFilterInfo, "/speed_filter_info", self.latched_qos
         )
+
         self.keepout_mask_pub = self.create_publisher(
             OccupancyGrid, "/keepout_filter_mask", self.latched_qos
         )
@@ -92,321 +88,268 @@ class ZonePublisher(Node):
             OccupancyGrid, "/speed_filter_mask", self.latched_qos
         )
 
-        # ---- Subscriber ----
-        self.map_sub = self.create_subscription(
-            OccupancyGrid, "/map", self.on_map, self.map_qos
-        )
-
+        # -----------------------
+        # Subscriber
+        # -----------------------
         self._map_msg = None
-        self._published_once = False
-        self._republish_left = 0
+        self.create_subscription(OccupancyGrid, "/map", self._on_map, self.map_qos)
 
-        # Check readiness frequently
-        self.timer = self.create_timer(0.2, self.tick)
+        # -----------------------
+        # Layers tracking
+        # -----------------------
+        self._layers = {"no_go_zones": [], "restricted": [], "slow_zones": []}
+        self._layers_mtime = None
 
-        self.get_logger().info("ZonePublisher: started")
-        self.get_logger().info("Waiting for /map + Nav2 costmaps to appear...")
-        self.get_logger().info(f"Keepout semantics: ZERO_MEANS_KEEPOUT={self.ZERO_MEANS_KEEPOUT}")
-        self.get_logger().info(f"Speed filter enabled: {self.enable_speed_filter} (max_speed_mps={self.MAX_SPEED_MPS})")
-        self.get_logger().info(f"Using map layers file: {self.layers_file}")
+        # Periodic publish (helps even if Nav2 restarts later)
+        period = 1.0 / max(self.publish_rate_hz, 0.1)
+        self.timer = self.create_timer(period, self._tick)
 
-    def on_map(self, msg: OccupancyGrid):
-        # Store the first good map
+        self.get_logger().info("ZonePublisher running.")
+        self.get_logger().info(f"layers_file: {self.layers_file}")
+        self.get_logger().info(f"speed_filter: {self.enable_speed_filter} (max_speed_mps={self.max_speed_mps})")
+        self.get_logger().info("Publishing keepout info on /costmap_filter_info (type=0)")
+        self.get_logger().info("Publishing speed info   on /speed_filter_info (type=1)")
+
+    # -----------------------
+    # Callbacks / main loop
+    # -----------------------
+    def _on_map(self, msg: OccupancyGrid):
         if self._map_msg is None and msg.info.width > 0 and msg.info.height > 0:
             self._map_msg = msg
             self.get_logger().info(
-                f"Got /map: frame={msg.header.frame_id} {msg.info.width}x{msg.info.height}, "
-                f"res={msg.info.resolution}, origin=({msg.info.origin.position.x:.3f},{msg.info.origin.position.y:.3f})"
+                f"Got /map: {msg.info.width}x{msg.info.height} res={msg.info.resolution} frame={msg.header.frame_id or 'map'}"
             )
 
-    def nav2_costmaps_present(self) -> bool:
-        """
-        Avoid publishing before Nav2 costmaps exist.
-        This helps the 'composition stuck / nothing comes up' timing race.
-        """
-        names = self.get_node_names()
-        return ("/local_costmap/local_costmap" in names) or ("/global_costmap/global_costmap" in names)
+    def _nav2_costmaps_present(self) -> bool:
+        # Correct check: name + namespace
+        for name, ns in self.get_node_names_and_namespaces():
+            if name == "local_costmap" and ns == "/local_costmap":
+                return True
+            if name == "global_costmap" and ns == "/global_costmap":
+                return True
+        return False
 
-    def tick(self):
+    def _tick(self):
         if self._map_msg is None:
             return
-
-        if not self.nav2_costmaps_present():
-            # Nav2 not ready yet; keep waiting
+        if not self._nav2_costmaps_present():
+            # Wait until Nav2 costmaps exist (avoids timing weirdness)
             return
 
-        layers_changed = self._load_layers_if_changed()
-        if layers_changed:
-            self._published_once = False
+        self._reload_layers_if_changed()
+        self._publish_all()
 
-        if not self._published_once:
-            self.publish_all()
-            self._published_once = True
-            self._republish_left = self.REPUBLISH_COUNT
-            self.get_logger().info("Published filter infos + masks (latched).")
-            return
-
-        if self._republish_left > 0:
-            # Republish a few times to make DDS discovery more robust
-            self._republish_left -= 1
-            self.publish_all()
-            # slow down republish rate
-            self.timer.cancel()
-            self.timer = self.create_timer(self.REPUBLISH_PERIOD_SEC, self.tick)
-
-    def publish_all(self):
+    # -----------------------
+    # Publish
+    # -----------------------
+    def _publish_all(self):
         now = self.get_clock().now().to_msg()
-        map_frame = self._map_msg.header.frame_id if self._map_msg.header.frame_id else "map"
+        map_frame = self._map_msg.header.frame_id or "map"
 
-        keepout_mask = self.build_keepout_mask(self._map_msg, self._layers)
+        keepout_mask = self._build_keepout_mask(self._map_msg, self._layers)
         keepout_mask.header.stamp = now
         keepout_mask.header.frame_id = map_frame
         self.keepout_mask_pub.publish(keepout_mask)
 
-        # Publish speed mask/info only if enabled (disabled by default to avoid unintended clamping)
         if self.enable_speed_filter:
-            speed_mask = self.build_speed_mask(self._map_msg, self._layers)
+            speed_mask = self._build_speed_mask(self._map_msg, self._layers)
             speed_mask.header.stamp = now
             speed_mask.header.frame_id = map_frame
             self.speed_mask_pub.publish(speed_mask)
 
-        # ---- Keepout filter info ----
-        keepout_info = CostmapFilterInfo()
-        keepout_info.header.stamp = now
-        keepout_info.header.frame_id = map_frame
-        keepout_info.type = 0  # KEEPOUT_FILTER
-        keepout_info.filter_mask_topic = "/keepout_filter_mask"
+        # Keepout FilterInfo (type=0)
+        k = CostmapFilterInfo()
+        k.header.stamp = now
+        k.header.frame_id = map_frame
+        k.type = 0
+        k.filter_mask_topic = "/keepout_filter_mask"
+        k.base = 0.0
+        k.multiplier = 1.0
+        self.keepout_info_pub.publish(k)
 
-        # For keepout filter: typically base/multiplier not used, but keep defaults
-        keepout_info.base = 0.0
-        keepout_info.multiplier = 1.0
-        self.keepout_filter_info_pub.publish(keepout_info)
-
-        # ---- Speed filter info ----
+        # Speed FilterInfo (type=1) => mask value is % of speed.
+        # We convert percent -> m/s using multiplier.
         if self.enable_speed_filter:
-            speed_info = CostmapFilterInfo()
-            speed_info.header.stamp = now
-            speed_info.header.frame_id = map_frame
-            speed_info.type = 1  # SPEED_FILTER
-            speed_info.filter_mask_topic = "/speed_filter_mask"
+            s = CostmapFilterInfo()
+            s.header.stamp = now
+            s.header.frame_id = map_frame
+            s.type = 1
+            s.filter_mask_topic = "/speed_filter_mask"
+            s.base = 0.0
+            s.multiplier = self.max_speed_mps / 100.0
+            self.speed_info_pub.publish(s)
 
-            # Nav2 speed filter commonly computes:
-            #   speed_limit = base + multiplier * mask_value
-            #
-            # If mask_value is 0..100 (%), this makes:
-            #   mask=0   -> base
-            #   mask=100 -> base + 100*multiplier
-            #
-            # We'll set it so:
-            #   mask=0   -> MAX_SPEED_MPS  (no restriction)
-            #   mask=100 -> 0.0           (full restriction)
-            #
-            # That means multiplier must be negative:
-            speed_info.base = float(self.MAX_SPEED_MPS)
-            speed_info.multiplier = -float(self.MAX_SPEED_MPS) / 100.0
-            self.speed_filter_info_pub.publish(speed_info)
-        else:
-            # Speed publishing disabled by default; do not advertise speed filter
-            pass
-
-    def create_blank_keepout_mask_like_map(self, map_msg: OccupancyGrid) -> OccupancyGrid:
-        mask = OccupancyGrid()
-        mask.info = map_msg.info  # copy metadata (width/height/res/origin)
-
-        size = map_msg.info.width * map_msg.info.height
-
-        # Blank should mean "fully free" everywhere.
-        # If 0 means keepout in your setup -> blank must be 100.
-        # If 100 means keepout -> blank must be 0.
-        blank_val = 100 if self.ZERO_MEANS_KEEPOUT else 0
-        mask.data = [blank_val] * size
-        return mask
-
-    def create_blank_speed_mask_like_map(self, map_msg: OccupancyGrid) -> OccupancyGrid:
-        mask = OccupancyGrid()
-        mask.info = map_msg.info
-
-        size = map_msg.info.width * map_msg.info.height
-
-        # Blank means "no speed restriction" everywhere.
-        # With our speed_info math above:
-        # mask=0 => MAX_SPEED_MPS
-        mask.data = [0] * size
-        return mask
-
-    def _load_layers_if_changed(self) -> bool:
-        """Reload map editor layers when the file changes."""
+    # -----------------------
+    # Layers file
+    # -----------------------
+    def _reload_layers_if_changed(self):
         try:
             mtime = os.path.getmtime(self.layers_file)
         except FileNotFoundError:
             mtime = None
 
         if mtime == self._layers_mtime:
-            return False
+            return
 
         self._layers_mtime = mtime
         self._layers = self._load_layers()
         total = sum(len(v) for v in self._layers.values())
-        self.get_logger().info(f"Loaded map layers: {total} objects")
-        return True
+        self.get_logger().info(f"Loaded layers: {total} objects")
 
     def _load_layers(self):
         if self.layers_file and os.path.exists(self.layers_file):
             try:
-                with open(self.layers_file, 'r') as f:
+                with open(self.layers_file, "r") as f:
                     data = json.load(f)
                 return {
-                    'no_go_zones': data.get('no_go_zones', []),
-                    'slow_zones': data.get('slow_zones', []),
-                    'restricted': data.get('restricted', []),
+                    "no_go_zones": data.get("no_go_zones", []),
+                    "restricted": data.get("restricted", []),
+                    "slow_zones": data.get("slow_zones", []),
                 }
             except Exception as e:
-                self.get_logger().error(f"Failed to load layers from {self.layers_file}: {e}")
-        return {'no_go_zones': [], 'slow_zones': [], 'restricted': []}
+                self.get_logger().error(f"Failed to load {self.layers_file}: {e}")
+        return {"no_go_zones": [], "restricted": [], "slow_zones": []}
 
-    def build_keepout_mask(self, map_msg: OccupancyGrid, layers: dict) -> OccupancyGrid:
-        mask = self.create_blank_keepout_mask_like_map(map_msg)
-        keepout_value = 0 if self.ZERO_MEANS_KEEPOUT else 100
+    # -----------------------
+    # Mask building
+    # -----------------------
+    def _blank_mask_like_map(self, map_msg: OccupancyGrid, fill_val: int) -> OccupancyGrid:
+        mask = OccupancyGrid()
+        mask.info = map_msg.info
+        size = map_msg.info.width * map_msg.info.height
+        mask.data = [int(fill_val)] * size
+        return mask
 
-        for layer_name in ('no_go_zones', 'restricted'):
+    def _build_keepout_mask(self, map_msg: OccupancyGrid, layers: dict) -> OccupancyGrid:
+        # 0 free everywhere by default
+        mask = self._blank_mask_like_map(map_msg, 0)
+
+        # Mark keepout cells as 100
+        for layer_name in ("no_go_zones", "restricted"):
             for obj in layers.get(layer_name, []):
-                self._apply_shape(mask, obj, keepout_value, combine='override')
+                self._apply_shape(mask, obj, 100, combine="override")
 
         return mask
 
-    def build_speed_mask(self, map_msg: OccupancyGrid, layers: dict) -> OccupancyGrid:
-        mask = self.create_blank_speed_mask_like_map(map_msg)
-        for obj in layers.get('slow_zones', []):
-            speed_limit = obj.get('speed_limit', self.MAX_SPEED_MPS)
-            mask_value = self._speed_limit_to_mask(speed_limit)
-            if mask_value <= 0:
-                continue
-            self._apply_shape(mask, obj, mask_value, combine='max')
+    def _build_speed_mask(self, map_msg: OccupancyGrid, layers: dict) -> OccupancyGrid:
+        # 100% speed everywhere by default
+        mask = self._blank_mask_like_map(map_msg, 100)
+
+        # In slow zones, set a smaller percent (e.g., 30 = 30% of max speed)
+        for obj in layers.get("slow_zones", []):
+            pct = int(obj.get("speed_percent", 50))
+            pct = max(1, min(pct, 100))
+            self._apply_shape(mask, obj, pct, combine="min")  # stricter (lower) wins
+
         return mask
 
-    def _speed_limit_to_mask(self, speed_limit) -> int:
-        try:
-            limit = float(speed_limit)
-        except (TypeError, ValueError):
-            return 0
-
-        if self.MAX_SPEED_MPS <= 0.0:
-            return 100
-
-        limit = max(0.0, min(limit, self.MAX_SPEED_MPS))
-        mask_value = int(round((self.MAX_SPEED_MPS - limit) * 100.0 / self.MAX_SPEED_MPS))
-        return max(0, min(mask_value, 100))
-
+    # -----------------------
+    # Rasterization
+    # -----------------------
     def _apply_shape(self, mask: OccupancyGrid, obj: dict, value: int, combine: str):
         info = mask.info
-        origin_x = info.origin.position.x
-        origin_y = info.origin.position.y
-        resolution = info.resolution
-        width = info.width
-        height = info.height
+        ox, oy = info.origin.position.x, info.origin.position.y
+        res = info.resolution
+        w, h = info.width, info.height
 
         def set_cell(gx, gy):
-            if gx < 0 or gy < 0 or gx >= width or gy >= height:
+            if gx < 0 or gy < 0 or gx >= w or gy >= h:
                 return
-            idx = gx + gy * width
-            if combine == 'max':
+            idx = gx + gy * w
+            if combine == "min":
+                mask.data[idx] = min(mask.data[idx], value)
+            elif combine == "max":
                 mask.data[idx] = max(mask.data[idx], value)
             else:
                 mask.data[idx] = value
 
-        shape_type = obj.get('type')
-        if shape_type == 'rectangle':
-            minx = min(obj.get('x1', 0.0), obj.get('x2', 0.0))
-            maxx = max(obj.get('x1', 0.0), obj.get('x2', 0.0))
-            miny = min(obj.get('y1', 0.0), obj.get('y2', 0.0))
-            maxy = max(obj.get('y1', 0.0), obj.get('y2', 0.0))
-            self._fill_rect(mask, minx, miny, maxx, maxy, set_cell, origin_x, origin_y, resolution)
-        elif shape_type == 'circle':
-            cx = obj.get('x', 0.0)
-            cy = obj.get('y', 0.0)
-            radius = obj.get('radius', 0.0)
-            self._fill_circle(mask, cx, cy, radius, set_cell, origin_x, origin_y, resolution)
-        elif shape_type == 'polygon':
-            points = obj.get('points', [])
-            if points:
-                poly = [(p.get('x', 0.0), p.get('y', 0.0)) for p in points]
-                self._fill_polygon(mask, poly, set_cell, origin_x, origin_y, resolution)
+        t = obj.get("type", "")
+        if t == "rectangle":
+            x1, y1 = float(obj.get("x1", 0.0)), float(obj.get("y1", 0.0))
+            x2, y2 = float(obj.get("x2", 0.0)), float(obj.get("y2", 0.0))
+            self._fill_rect(set_cell, ox, oy, res, x1, y1, x2, y2)
 
-    def _fill_rect(self, mask, minx, miny, maxx, maxy, set_cell, origin_x, origin_y, resolution):
-        gx_min = int(math.floor((minx - origin_x) / resolution))
-        gx_max = int(math.floor((maxx - origin_x) / resolution))
-        gy_min = int(math.floor((miny - origin_y) / resolution))
-        gy_max = int(math.floor((maxy - origin_y) / resolution))
+        elif t == "circle":
+            cx, cy = float(obj.get("x", 0.0)), float(obj.get("y", 0.0))
+            r = float(obj.get("radius", 0.0))
+            self._fill_circle(set_cell, ox, oy, res, cx, cy, r)
+
+        elif t == "polygon":
+            points = obj.get("points", [])
+            poly = [(float(p.get("x", 0.0)), float(p.get("y", 0.0))) for p in points]
+            if len(poly) >= 3:
+                self._fill_polygon(set_cell, ox, oy, res, poly)
+
+    def _fill_rect(self, set_cell, ox, oy, res, x1, y1, x2, y2):
+        minx, maxx = min(x1, x2), max(x1, x2)
+        miny, maxy = min(y1, y2), max(y1, y2)
+
+        gx_min = int(math.floor((minx - ox) / res))
+        gx_max = int(math.floor((maxx - ox) / res))
+        gy_min = int(math.floor((miny - oy) / res))
+        gy_max = int(math.floor((maxy - oy) / res))
 
         for gy in range(gy_min, gy_max + 1):
             for gx in range(gx_min, gx_max + 1):
                 set_cell(gx, gy)
 
-    def _fill_circle(self, mask, cx, cy, radius, set_cell, origin_x, origin_y, resolution):
+    def _fill_circle(self, set_cell, ox, oy, res, cx, cy, radius):
         if radius <= 0.0:
             return
-        gx_min = int(math.floor((cx - radius - origin_x) / resolution))
-        gx_max = int(math.floor((cx + radius - origin_x) / resolution))
-        gy_min = int(math.floor((cy - radius - origin_y) / resolution))
-        gy_max = int(math.floor((cy + radius - origin_y) / resolution))
+
+        gx_min = int(math.floor((cx - radius - ox) / res))
+        gx_max = int(math.floor((cx + radius - ox) / res))
+        gy_min = int(math.floor((cy - radius - oy) / res))
+        gy_max = int(math.floor((cy + radius - oy) / res))
         r2 = radius * radius
 
         for gy in range(gy_min, gy_max + 1):
-            wy = origin_y + (gy + 0.5) * resolution
+            wy = oy + (gy + 0.5) * res
             for gx in range(gx_min, gx_max + 1):
-                wx = origin_x + (gx + 0.5) * resolution
+                wx = ox + (gx + 0.5) * res
                 if (wx - cx) ** 2 + (wy - cy) ** 2 <= r2:
                     set_cell(gx, gy)
 
-    def _fill_polygon(self, mask, poly, set_cell, origin_x, origin_y, resolution):
+    def _fill_polygon(self, set_cell, ox, oy, res, poly):
         xs = [p[0] for p in poly]
         ys = [p[1] for p in poly]
         minx, maxx = min(xs), max(xs)
         miny, maxy = min(ys), max(ys)
 
-        gx_min = int(math.floor((minx - origin_x) / resolution))
-        gx_max = int(math.floor((maxx - origin_x) / resolution))
-        gy_min = int(math.floor((miny - origin_y) / resolution))
-        gy_max = int(math.floor((maxy - origin_y) / resolution))
+        gx_min = int(math.floor((minx - ox) / res))
+        gx_max = int(math.floor((maxx - ox) / res))
+        gy_min = int(math.floor((miny - oy) / res))
+        gy_max = int(math.floor((maxy - oy) / res))
 
         for gy in range(gy_min, gy_max + 1):
-            wy = origin_y + (gy + 0.5) * resolution
+            wy = oy + (gy + 0.5) * res
             for gx in range(gx_min, gx_max + 1):
-                wx = origin_x + (gx + 0.5) * resolution
-                if self._point_in_polygon(wx, wy, poly):
+                wx = ox + (gx + 0.5) * res
+                if self._point_in_poly(wx, wy, poly):
                     set_cell(gx, gy)
 
-    def _point_in_polygon(self, x, y, poly):
+    def _point_in_poly(self, x, y, poly):
         inside = False
         j = len(poly) - 1
         for i in range(len(poly)):
             xi, yi = poly[i]
             xj, yj = poly[j]
-            intersects = ((yi > y) != (yj > y)) and (
-                x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi
-            )
-            if intersects:
+            if ((yi > y) != (yj > y)) and (
+                x < (xj - xi) * (y - yi) / ((yj - yi) + 1e-12) + xi
+            ):
                 inside = not inside
             j = i
         return inside
 
 
-def main(args=None):
-    rclpy.init(args=args)
+def main():
+    rclpy.init()
     node = ZonePublisher()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
-    finally:
-        try:
-            node.destroy_node()
-        except:
-            pass
-        try:
-            rclpy.shutdown()
-        except:
-            pass  # Already shut down
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":
