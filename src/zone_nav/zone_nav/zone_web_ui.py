@@ -470,102 +470,51 @@ class ZoneWebServer(Node):
             if self._path_callback_count <= 3:
                 self.get_logger().info(f'✓ Path callback #{self._path_callback_count} - Empty path (no navigation active)')
     
+    def _scan_to_map_points(self, msg, sample_rate=3, min_valid_range=0.15):
+        pts = []
+        try:
+            stamp = Time.from_msg(msg.header.stamp)
+            angle = msg.angle_min
+            for i, r in enumerate(msg.ranges):
+                if i % sample_rate == 0 and r > min_valid_range and msg.range_min < r < msg.range_max:
+                    ps = PointStamped()
+                    ps.header.frame_id = msg.header.frame_id
+                    ps.header.stamp = stamp.to_msg()
+                    ps.point.x = float(r * math.cos(angle))
+                    ps.point.y = float(r * math.sin(angle))
+                    ps.point.z = 0.0
+
+                    pmap = self.tf_buffer.transform(ps, "map", timeout=Duration(seconds=0.05))
+                    pts.append({"x": pmap.point.x, "y": pmap.point.y})
+
+                angle += msg.angle_increment
+        except Exception as e:
+            return None, e
+
+        return pts, None
+
     def scan_front_callback(self, msg):
-        """Store FRONT lidar scan data (/scan) - transform to map frame using TF2"""
-        points = []
-        
-        try:
-            # Get transform from laser frame to map frame AT THE SCAN TIMESTAMP
-            transform = self.tf_buffer.lookup_transform(
-                'map',
-                msg.header.frame_id,
-                msg.header.stamp,
-                timeout=rclpy.duration.Duration(seconds=0.1)
-            )
-            
-            # Sample every Nth point to reduce data size
-            sample_rate = 3
-            min_valid_range = 0.15
-            
-            angle = msg.angle_min
-            for i, r in enumerate(msg.ranges):
-                if i % sample_rate == 0 and r > min_valid_range and msg.range_min < r < msg.range_max:
-                    # Convert polar to cartesian in sensor frame
-                    x_sensor = r * math.cos(angle)
-                    y_sensor = r * math.sin(angle)
-                    
-                    # Apply transform to map frame
-                    x_map = (transform.transform.translation.x + 
-                            x_sensor * (2*(transform.transform.rotation.w**2 + transform.transform.rotation.x**2) - 1) +
-                            y_sensor * 2*(transform.transform.rotation.x*transform.transform.rotation.y - transform.transform.rotation.w*transform.transform.rotation.z))
-                    
-                    y_map = (transform.transform.translation.y +
-                            x_sensor * 2*(transform.transform.rotation.x*transform.transform.rotation.y + transform.transform.rotation.w*transform.transform.rotation.z) +
-                            y_sensor * (2*(transform.transform.rotation.w**2 + transform.transform.rotation.y**2) - 1))
-                    
-                    points.append({'x': x_map, 'y': y_map})
-                
-                angle += msg.angle_increment
-                
-        except (TransformException, tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
-            # Throttled warning - print once every 5 seconds when TF fails
-            current_time = self.get_clock().now().nanoseconds / 1e9
-            if (current_time - self._last_tf_warn_front) > 5.0:
-                self.get_logger().warn(f"TF lookup failed map <- {msg.header.frame_id}: {e}")
-                self._last_tf_warn_front = current_time
-            # Silently skip - transforms not available yet or scan too old
-            pass
-        
-        self.laser_scan_front = points
+        pts, err = self._scan_to_map_points(msg)
+        if err:
+            now = self.get_clock().now().nanoseconds / 1e9
+            if (now - self._last_tf_warn_front) > 5.0:
+                self.get_logger().warn(f"TF transform failed FRONT ({msg.header.frame_id} -> map): {err}")
+                self._last_tf_warn_front = now
+            return
+
+        self.laser_scan_front = pts
         self._merge_scans()
-    
+
     def scan_rear_callback(self, msg):
-        """Store REAR lidar scan data (/scan2) - transform to map frame using TF2"""
-        points = []
-        
-        try:
-            # Get transform from laser frame to map frame AT THE SCAN TIMESTAMP
-            transform = self.tf_buffer.lookup_transform(
-                'map',
-                msg.header.frame_id,
-                msg.header.stamp,
-                timeout=rclpy.duration.Duration(seconds=0.1)
-            )
-            
-            # Sample every Nth point to reduce data size
-            sample_rate = 3
-            min_valid_range = 0.15
-            
-            angle = msg.angle_min
-            for i, r in enumerate(msg.ranges):
-                if i % sample_rate == 0 and r > min_valid_range and msg.range_min < r < msg.range_max:
-                    # Convert polar to cartesian in sensor frame
-                    x_sensor = r * math.cos(angle)
-                    y_sensor = r * math.sin(angle)
-                    
-                    # Apply transform to map frame (TF2 handles all rotations/offsets)
-                    x_map = (transform.transform.translation.x + 
-                            x_sensor * (2*(transform.transform.rotation.w**2 + transform.transform.rotation.x**2) - 1) +
-                            y_sensor * 2*(transform.transform.rotation.x*transform.transform.rotation.y - transform.transform.rotation.w*transform.transform.rotation.z))
-                    
-                    y_map = (transform.transform.translation.y +
-                            x_sensor * 2*(transform.transform.rotation.x*transform.transform.rotation.y + transform.transform.rotation.w*transform.transform.rotation.z) +
-                            y_sensor * (2*(transform.transform.rotation.w**2 + transform.transform.rotation.y**2) - 1))
-                    
-                    points.append({'x': x_map, 'y': y_map})
-                
-                angle += msg.angle_increment
-                
-        except (TransformException, tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
-            # Throttled warning - print once every 5 seconds when TF fails
-            current_time = self.get_clock().now().nanoseconds / 1e9
-            if (current_time - self._last_tf_warn_rear) > 5.0:
-                self.get_logger().warn(f"TF lookup failed map <- {msg.header.frame_id}: {e}")
-                self._last_tf_warn_rear = current_time
-            # Silently skip - transforms not available yet or scan too old
-            pass
-        
-        self.laser_scan_rear = points
+        pts, err = self._scan_to_map_points(msg)
+        if err:
+            now = self.get_clock().now().nanoseconds / 1e9
+            if (now - self._last_tf_warn_rear) > 5.0:
+                self.get_logger().warn(f"TF transform failed REAR ({msg.header.frame_id} -> map): {err}")
+                self._last_tf_warn_rear = now
+            return
+
+        self.laser_scan_rear = pts
         self._merge_scans()
     
     def _merge_scans(self):
@@ -1381,17 +1330,16 @@ class ZoneWebServer(Node):
         
         request = DeleteZone.Request()
         request.name = name
-        future = self.delete_zone_client.call_async(request)
-        
         try:
-            # Wait for result with timeout
-            result = future.result()
-            return {'ok': result.ok, 'message': result.message}
+            result = self.call_map_service(self.delete_zone_client, request, timeout=2.0)
+            if result is None:
+                return {'ok': False, 'message': 'DeleteZone timed out'}
+            return {'ok': bool(result.ok), 'message': str(result.message)}
         except Exception as e:
             return {'ok': False, 'message': f'Service call failed: {str(e)}'}
-    
-    
-    def update_zone_params(self, name, zone_type='normal', speed=0.5, action='', charge_duration=0):
+
+
+    def update_zone_params_service(self, name, zone_type='normal', speed=0.5, action='', charge_duration=0):
         """Call UpdateZoneParams service"""
         if not self.update_zone_params_client.wait_for_service(timeout_sec=1.0):
             return {'ok': False, 'message': 'UpdateZoneParams service not available'}
@@ -1399,57 +1347,32 @@ class ZoneWebServer(Node):
         request = UpdateZoneParams.Request()
         request.name = name
         request.type = zone_type
-        request.speed = speed
-        request.action = action
-        request.charge_duration = charge_duration
-        future = self.update_zone_params_client.call_async(request)
-        
+        request.speed = float(speed)
+        request.action = action or ''
+        request.charge_duration = int(charge_duration) if charge_duration is not None else 0
         try:
-            result = future.result()
-            return {'ok': result.ok, 'message': result.message}
+            result = self.call_map_service(self.update_zone_params_client, request, timeout=2.0)
+            if result is None:
+                return {'ok': False, 'message': 'UpdateZoneParams timed out'}
+            return {'ok': bool(result.ok), 'message': str(result.message)}
         except Exception as e:
             return {'ok': False, 'message': f'Service call failed: {str(e)}'}
     
     def reorder_zones_service(self, zone_names):
         """Call ReorderZones service"""
-        service_ready = False
-        for attempt in range(5):
-            if self.reorder_zones_client.wait_for_service(timeout_sec=2.0):
-                service_ready = True
-                break
-            self.get_logger().warn(f'ReorderZones service not available yet (attempt {attempt + 1}/5)')
-        if not service_ready:
+        if not self.reorder_zones_client.wait_for_service(timeout_sec=2.0):
             return {'ok': False, 'message': 'ReorderZones service not available'}
         
         request = ReorderZones.Request()
         request.zone_names = zone_names
-        future = self.reorder_zones_client.call_async(request)
         
         try:
-            result = future.result()
-            return {'ok': result.ok, 'message': result.message}
+            result = self.call_map_service(self.reorder_zones_client, request, timeout=3.0)
+            if result is None:
+                return {'ok': False, 'message': 'ReorderZones timed out'}
+            return {'ok': bool(result.ok), 'message': str(result.message)}
         except Exception as e:
             return {'ok': False, 'message': f'Service call failed: {str(e)}'}
-        """Delete a zone from the zones file"""
-        try:
-            zones = self.load_zones()
-            
-            if name not in zones:
-                return {'ok': False, 'message': f'Zone "{name}" not found'}
-            
-            # Remove the zone
-            del zones[name]
-            
-            # Save back to file
-            with open(self.zones_file, 'w') as f:
-                yaml.dump({'zones': zones}, f, default_flow_style=False)
-            
-            self.get_logger().info(f'Zone "{name}" deleted successfully')
-            return {'ok': True, 'message': f'Zone "{name}" deleted successfully'}
-            
-        except Exception as e:
-            self.get_logger().error(f'Failed to delete zone: {e}')
-            return {'ok': False, 'message': f'Error deleting zone: {str(e)}'}
     
     def reorder_zones(self, reordered_zones):
         """Reorder zones by saving them in the new order"""
@@ -1699,7 +1622,7 @@ class ZoneWebServer(Node):
         except Exception as e:
             self.get_logger().error(f'Save zone service call failed: {e}')
     
-    def update_zone_params(self, name, zone_type='normal', speed=0.5, action=None, charge_duration=None):
+    def update_zone_params_local(self, name, zone_type='normal', speed=0.5, action=None, charge_duration=None):
         """Update zone parameters (type, speed, action, charge_duration)"""
         try:
             zones = self.load_zones()
@@ -2249,7 +2172,9 @@ def update_zone_params():
         return jsonify({'error': 'Zone name is required'}), 400
     
     # Call UpdateZoneParams service
-    result = ros_node.update_zone_params(name, zone_type, speed, action, charge_duration)
+    result = ros_node.update_zone_params_service(name, zone_type, speed, action, charge_duration)
+    if result.get('ok'):
+        ros_node.update_zone_params_local(name, zone_type, speed, action, charge_duration)
     return jsonify(result)
 
 
@@ -2783,10 +2708,14 @@ def set_initial_pose():
             
             # Set covariance (small values = high confidence)
             # Format: [x, y, z, rot_x, rot_y, rot_z] - 6x6 matrix
-            pose_msg.pose.covariance = [0.0] * 36
-            pose_msg.pose.covariance[0] = 0.25   # x variance
-            pose_msg.pose.covariance[7] = 0.25   # y variance
-            pose_msg.pose.covariance[35] = 0.06  # yaw variance
+            pose_msg.pose.covariance = [
+                0.25, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.25, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 99999.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 99999.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 99999.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0685
+            ]
             
             # Publish to AMCL
             ros_node.initial_pose_pub.publish(pose_msg)
@@ -2887,37 +2816,39 @@ def check_obstacles():
     if ros_node is None or ros_node.laser_scan is None or ros_node.robot_pose is None:
         return jsonify({'error': 'No lidar data or position available'}), 500
     
-    scan = ros_node.laser_scan
+    pts = ros_node.laser_scan
     pose = ros_node.robot_pose
-    
-    # Count obstacles in different zones
-    obstacle_zones = {
-        'critical': 0,  # < 0.4m
-        'warning': 0,   # 0.4m - 0.8m
-        'safe': 0,      # 0.8m - 2.0m
-        'clear': 0      # > 2.0m
+
+    bins = {
+        'critical': 0,  # < 0.40m
+        'warning': 0,   # 0.40 - 0.80m
+        'safe': 0,      # 0.80 - 2.00m
+        'clear': 0      # > 2.00m
     }
-    
-    angle = scan['angle_min']
-    for r in scan['ranges']:
-        if scan['range_min'] < r < scan['range_max']:
-            if r < 0.4:
-                obstacle_zones['critical'] += 1
-            elif r < 0.8:
-                obstacle_zones['warning'] += 1
-            elif r < 2.0:
-                obstacle_zones['safe'] += 1
-            else:
-                obstacle_zones['clear'] += 1
-        angle += scan['angle_increment']
-    
-    total_valid = sum(obstacle_zones.values())
-    
+
+    min_dist = None
+    for p in pts:
+        d = math.hypot(p['x'] - pose['x'], p['y'] - pose['y'])
+        if min_dist is None or d < min_dist:
+            min_dist = d
+        if d < 0.4:
+            bins['critical'] += 1
+        elif d < 0.8:
+            bins['warning'] += 1
+        elif d < 2.0:
+            bins['safe'] += 1
+        else:
+            bins['clear'] += 1
+
+    total = sum(bins.values())
+    blocked = bins['critical'] > 10 or (min_dist is not None and min_dist < ros_node.safety_radius)
+
     return jsonify({
-        'obstacle_count': obstacle_zones,
-        'total_valid_readings': total_valid,
-        'critical_zone_pct': f'{100.0 * obstacle_zones["critical"] / max(1, total_valid):.1f}%',
-        'assessment': 'BLOCKED' if obstacle_zones['critical'] > 10 else 'CLEAR'
+        'obstacle_count': bins,
+        'total_points': total,
+        'min_distance_m': None if min_dist is None else round(min_dist, 3),
+        'safety_radius_m': ros_node.safety_radius,
+        'assessment': 'BLOCKED' if blocked else 'CLEAR'
     })
 
 

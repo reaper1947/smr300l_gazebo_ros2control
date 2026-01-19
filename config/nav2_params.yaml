@@ -9,10 +9,10 @@ amcl:
 =======
     
     # Auto-initialize at robot spawn position
-    set_initial_pose: true
-    initial_pose_x: 0.0
-    initial_pose_y: 0.0
-    initial_pose_a: 0.0
+    #set_initial_pose: true
+    #initial_pose_x: 0.0
+    #initial_pose_y: 0.0
+    #initial_pose_a: 0.0
     
 >>>>>>> 09e677c (Proper Commit From Right Account :))
     alpha1: 0.2

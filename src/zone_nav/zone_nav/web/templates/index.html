@@ -757,6 +757,29 @@
             opacity: 1;
         }
 
+        .pose-hint {
+            position: absolute;
+            top: 68px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.75);
+            color: #e6edf3;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 11px;
+            border: 1px solid var(--border-primary);
+            z-index: 100;
+        }
+
+        .pose-hint:empty {
+            display: none;
+        }
+
+        .tool-panel.active {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 2px rgba(46, 160, 67, 0.12);
+        }
+
         .zoom-level {
             display: flex;
             align-items: center;
@@ -1305,7 +1328,7 @@
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card tool-panel" id="filters-card">
                         <h2>Configuration Layouts</h2>
                         <div style="display: flex; gap: 8px; margin-bottom: 10px;">
                             <button class="btn-save" style="flex: 1; padding: 8px; background: #4CAF50;"
@@ -1329,32 +1352,7 @@
                         </div>
                     </div>
 
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">Map Tools</h3>
-                        </div>
-                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                            <button class="tool-btn" onclick="setMapTool('pan')" id="pan-tool"
-                                title="Pan/Hand Tool (H)">
-                                Pan
-                            </button>
-                            <button class="tool-btn active" onclick="setMapTool('select')" id="select-tool"
-                                title="Select Tool (V)">
-                                Select
-                            </button>
-                            <button class="tool-btn" onclick="setMapTool('edit')" id="edit-tool" title="Edit Zones (M)">
-                                Move
-                            </button>
-                            <button class="tool-btn" onclick="resetView()" title="Reset View (R)">
-                                Reset
-                            </button>
-                            <button class="tool-btn" onclick="fitToScreen()" title="Fit to Screen (F)">
-                                Fit
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="card">
+                    <div class="card tool-panel" id="zone-add-card">
                         <div class="card-header">
                             <h3 class="card-title">Filters</h3>
                         </div>
@@ -1415,7 +1413,7 @@
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card tool-panel" id="manual-control-card">
                         <div class="card-header">
                             <h3 class="card-title">Add New Zone</h3>
                         </div>
@@ -1467,7 +1465,7 @@
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card tool-panel" id="path-drawing-card">
                         <div class="collapsible-header" onclick="toggleZonesCollapse()" style="margin: 0; padding: 0;">
                             <h3 class="card-title">Saved Zones</h3>
                             <span class="collapse-icon" id="zones-collapse-icon">v</span>
@@ -1583,6 +1581,44 @@
             </div>
 
             <div id="map-container">
+                <div class="map-toolbar">
+                    <div class="toolbar-group">
+                        <button class="tool-btn map-tool" onclick="setMapTool('pan')" id="pan-tool" title="Pan (H)">
+                            🖐️
+                        </button>
+                        <button class="tool-btn map-tool active" onclick="setMapTool('select')" id="select-tool" title="Select (V)">
+                            🖱️
+                        </button>
+                        <button class="tool-btn map-tool" onclick="setMapTool('edit')" id="edit-tool" title="Move Zones (M)">
+                            ✥
+                        </button>
+                    </div>
+                    <div class="toolbar-group">
+                        <button class="tool-btn panel-tool" onclick="openZonePanel()" title="Add Zone">
+                            ➕
+                        </button>
+                        <button class="tool-btn panel-tool" onclick="openFiltersPanel()" title="Filters">
+                            🧱
+                        </button>
+                        <button class="tool-btn panel-tool" id="path-draw-tool" onclick="togglePathDrawing(true)" title="Path Drawing">
+                            ✏️
+                        </button>
+                    </div>
+                    <div class="toolbar-group">
+                        <button class="tool-btn map-tool" onclick="resetView()" title="Reset View (R)">
+                            ⟲
+                        </button>
+                        <button class="tool-btn map-tool" onclick="fitToScreen()" title="Fit to Screen (F)">
+                            ⛶
+                        </button>
+                    </div>
+                    <div class="toolbar-group">
+                        <button class="tool-btn pose-tool" id="btnPoseEstimate" onclick="togglePoseEstimateMode()" title="Manual Relocate">
+                            📍
+                        </button>
+                    </div>
+                </div>
+                <div id="poseHint" class="pose-hint"></div>
                 <canvas id="canvas"></canvas>
                 <div class="zoom-controls">
                     <button class="zoom-btn" onclick="zoomIn()">+</button>
@@ -1682,6 +1718,7 @@
                 const ROSBRIDGE_URL = window.ROSBRIDGE_URL || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:9090`;
                 const ROSBRIDGE_MAP_TOPIC = '/map';
                 const ROSBRIDGE_MAP_TYPE = window.ROSBRIDGE_MAP_TYPE || 'nav_msgs/msg/OccupancyGrid';
+                const ROSBRIDGE_MAP_COMPRESSION = window.ROSBRIDGE_MAP_COMPRESSION || 'none';
                 const ROSBRIDGE_AUTO_RECONNECT = window.ROSBRIDGE_AUTO_RECONNECT !== false;
                 let mapData = null;
                 let zones = {};
@@ -1719,6 +1756,7 @@
                 let mapMessageType = null;
                 let rosbridgeReconnectTimer = null;
                 let rosbridgeReconnectDelay = 2000;
+                let initialPosePub = null;
 
                 // Map tools
                 let currentTool = 'select';  // 'select', 'pan', 'edit'
@@ -1746,6 +1784,12 @@
                 let previousPathFollowingActive = false;
                 let currentPathWaypoint = 0;  // Current waypoint being navigated to
                 let alternativePathWarningShown = false;  // Track if we showed path deviation warning
+
+                // Pose estimate (manual relocate)
+                let poseEstimateMode = false;
+                let poseStep = 0;
+                let poseStart = null;
+                let poseCursor = null;
 
                 // Filter layers
                 const FILTER_LAYER_META = {
@@ -1927,6 +1971,112 @@
                     if (finishBtn) {
                         finishBtn.style.display = filterDrawMode === 'polygon' ? 'inline-block' : 'none';
                     }
+                }
+
+                function openToolPanel(panelId) {
+                    const panel = document.getElementById(panelId);
+                    if (!panel) return;
+
+                    document.querySelectorAll('.tool-panel').forEach(el => el.classList.remove('active'));
+                    panel.classList.add('active');
+
+                    if (panelId === 'manual-control-card') {
+                        const content = document.getElementById('manual-content');
+                        const icon = document.getElementById('manual-collapse-icon');
+                        if (content && content.classList.contains('collapsed')) {
+                            content.classList.remove('collapsed');
+                        }
+                        if (icon && icon.classList.contains('collapsed')) {
+                            icon.classList.remove('collapsed');
+                        }
+                    }
+
+                    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    setTimeout(() => panel.classList.remove('active'), 1200);
+                }
+
+                function openZonePanel() {
+                    setMapTool('select');
+                    openToolPanel('zone-add-card');
+                }
+
+                function openFiltersPanel() {
+                    openToolPanel('filters-card');
+                }
+
+                function togglePoseEstimateMode() {
+                    if (isDrawingPath || filterDrawMode || settingOrientation) {
+                        showStatus('Finish drawing/filter/zone placement first', 'error');
+                        return;
+                    }
+
+                    poseEstimateMode = !poseEstimateMode;
+                    poseStep = 0;
+                    poseStart = null;
+                    poseCursor = null;
+                    const btn = document.getElementById('btnPoseEstimate');
+                    if (btn) {
+                        btn.classList.toggle('active', poseEstimateMode);
+                    }
+                    const hint = document.getElementById('poseHint');
+                    if (hint) {
+                        hint.textContent = poseEstimateMode ? 'Click position, then click direction.' : '';
+                    }
+                    updateCursor();
+                    drawMap();
+                }
+
+                function publishInitialPose(x, y, yaw) {
+                    const half = yaw / 2.0;
+                    const msg = new ROSLIB.Message({
+                        header: {
+                            frame_id: 'map',
+                            stamp: { sec: 0, nanosec: 0 }
+                        },
+                        pose: {
+                            pose: {
+                                position: { x: x, y: y, z: 0.0 },
+                                orientation: { x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) }
+                            },
+                            covariance: [
+                                0.25, 0, 0, 0, 0, 0,
+                                0, 0.25, 0, 0, 0, 0,
+                                0, 0, 99999, 0, 0, 0,
+                                0, 0, 0, 99999, 0, 0,
+                                0, 0, 0, 0, 99999, 0,
+                                0, 0, 0, 0, 0, 0.0685
+                            ]
+                        }
+                    });
+                    if (rosbridgeConnected && ros) {
+                        if (!initialPosePub) {
+                            initialPosePub = new ROSLIB.Topic({
+                                ros: ros,
+                                name: '/initialpose',
+                                messageType: 'geometry_msgs/PoseWithCovarianceStamped'
+                            });
+                        }
+                        initialPosePub.publish(msg);
+                        showStatus('Initial pose published', 'success');
+                        return;
+                    }
+
+                    fetch('/api/robot/set_pose', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ x, y, theta: yaw })
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.ok) {
+                                showStatus(data.message || 'Initial pose published', 'success');
+                            } else {
+                                showStatus(data.error || 'Failed to publish initial pose', 'error');
+                            }
+                        })
+                        .catch(error => {
+                            showStatus('Error: ' + error, 'error');
+                        });
                 }
 
                 function startFilterDraw() {
@@ -2272,6 +2422,7 @@
                     });
 
                     loadMap();
+                    initRosbridgeMap();
                     loadZones();
                     loadSavedPaths();
                     loadLayoutsUI();
@@ -2374,9 +2525,9 @@
                 }
 
                 function initRosbridgeMap() {
-                    if (ros || !window.ROSLIB || !window.ROS2D) {
-                        if (!window.ROSLIB || !window.ROS2D) {
-                            showStatus('ROS bridge libraries failed to load', 'error');
+                    if (ros || !window.ROSLIB) {
+                        if (!window.ROSLIB) {
+                            showStatus('ROS bridge library failed to load', 'error');
                         }
                         return;
                     }
@@ -2387,6 +2538,11 @@
                         rosbridgeConnected = true;
                         rosbridgeReconnectDelay = 2000;
                         showStatus('Connected to rosbridge', 'success');
+                        initialPosePub = new ROSLIB.Topic({
+                            ros: ros,
+                            name: '/initialpose',
+                            messageType: 'geometry_msgs/PoseWithCovarianceStamped'
+                        });
                         subscribeToMapTopic();
                     });
 
@@ -2399,6 +2555,7 @@
                     ros.on('close', () => {
                         rosbridgeConnected = false;
                         mapTopic = null;
+                        initialPosePub = null;
                         ros = null;
                         showStatus('Rosbridge disconnected', 'error');
                         scheduleRosbridgeReconnect();
@@ -2425,7 +2582,7 @@
                         ros: ros,
                         name: ROSBRIDGE_MAP_TOPIC,
                         messageType: ROSBRIDGE_MAP_TYPE,
-                        compression: 'png'
+                        compression: ROSBRIDGE_MAP_COMPRESSION
                     });
 
                     mapMessageType = ROSBRIDGE_MAP_TYPE;
@@ -2900,6 +3057,7 @@
 
                     drawFilterLayers();
                     drawFilterPreview();
+                    drawPoseEstimatePreview();
 
                     // Draw zones
                     for (const [name, zone] of Object.entries(zones)) {
@@ -3311,6 +3469,34 @@
                     }
                 }
 
+                function drawPoseEstimatePreview() {
+                    if (!poseEstimateMode || !poseStart) return;
+
+                    const [sx, sy] = worldToPixel(poseStart.x, poseStart.y);
+                    ctx.save();
+                    ctx.fillStyle = '#00bcd4';
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    if (poseStep === 1 && poseCursor) {
+                        const [cx, cy] = worldToPixel(poseCursor.x, poseCursor.y);
+                        ctx.strokeStyle = '#00bcd4';
+                        ctx.lineWidth = 3;
+                        ctx.setLineDash([6, 4]);
+                        ctx.beginPath();
+                        ctx.moveTo(sx, sy);
+                        ctx.lineTo(cx, cy);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+
+                    ctx.restore();
+                }
+
                 function drawFilterShape(obj, meta) {
                     const type = obj.type || 'rectangle';
                     const style = { stroke: meta.color, fill: meta.fill };
@@ -3458,6 +3644,37 @@
 
                     const [wx, wy] = pixelToWorld(x, y);
 
+                    if (poseEstimateMode) {
+                        if (poseStep === 0) {
+                            poseStart = { x: wx, y: wy };
+                            poseStep = 1;
+                            const hint = document.getElementById('poseHint');
+                            if (hint) {
+                                hint.textContent = 'Now click a second point to set heading.';
+                            }
+                            drawMap();
+                            return;
+                        }
+
+                        const yaw = Math.atan2(wy - poseStart.y, wx - poseStart.x);
+                        publishInitialPose(poseStart.x, poseStart.y, yaw);
+                        poseEstimateMode = false;
+                        poseStep = 0;
+                        poseStart = null;
+                        poseCursor = null;
+                        const btn = document.getElementById('btnPoseEstimate');
+                        if (btn) {
+                            btn.classList.remove('active');
+                        }
+                        const hint = document.getElementById('poseHint');
+                        if (hint) {
+                            hint.textContent = '';
+                        }
+                        updateCursor();
+                        drawMap();
+                        return;
+                    }
+
                     if (filterDrawMode === 'polygon') {
                         filterPolygonPoints.push({ x: wx, y: wy });
                         filterCursorWorld = { x: wx, y: wy };
@@ -3527,6 +3744,12 @@
                     const x = e.clientX - rect.left;
                     const y = e.clientY - rect.top;
                     const [wx, wy] = pixelToWorld(x, y);
+
+                    if (poseEstimateMode && poseStep === 1) {
+                        poseCursor = { x: wx, y: wy };
+                        drawMap();
+                        return;
+                    }
 
                     if (settingOrientation) {
                         // Show live orientation preview
@@ -3966,10 +4189,11 @@
                         });
                 }
 
-                function togglePathDrawing() {
+                function togglePathDrawing(openPanel = false) {
                     console.log('togglePathDrawing called, isDrawingPath=' + isDrawingPath);
                     isDrawingPath = !isDrawingPath;
                     const btn = document.getElementById('path-draw-btn');
+                    const toolBtn = document.getElementById('path-draw-tool');
                     const statusDiv = document.getElementById('path-status');
 
                     if (isDrawingPath) {
@@ -3979,11 +4203,16 @@
                         canvas.style.cursor = 'crosshair';
                         drawnPath = [];
                         updatePathUI();
+                        if (toolBtn) toolBtn.classList.add('active');
                     } else {
                         btn.textContent = '✏️ Start Drawing';
                         btn.style.background = '#2196F3';
                         statusDiv.style.display = 'none';
                         canvas.style.cursor = 'crosshair';
+                        if (toolBtn) toolBtn.classList.remove('active');
+                    }
+                    if (openPanel) {
+                        openToolPanel('path-drawing-card');
                     }
                     drawMap();
                 }
@@ -4646,14 +4875,16 @@
                 function setMapTool(tool) {
                     currentTool = tool;
                     editingZone = null;
-                    document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+                    document.querySelectorAll('.map-tool').forEach(btn => btn.classList.remove('active'));
                     const toolBtn = document.getElementById(tool + '-tool');
                     if (toolBtn) toolBtn.classList.add('active');
                     updateCursor();
                 }
 
                 function updateCursor() {
-                    if (currentTool === 'pan' || spaceKeyPressed) {
+                    if (poseEstimateMode) {
+                        canvas.style.cursor = 'crosshair';
+                    } else if (currentTool === 'pan' || spaceKeyPressed) {
                         canvas.style.cursor = 'grab';
                     } else if (currentTool === 'edit') {
                         canvas.style.cursor = 'default';
