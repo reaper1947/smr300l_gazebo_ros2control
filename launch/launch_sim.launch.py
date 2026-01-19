@@ -196,6 +196,14 @@ def generate_launch_description():
         )
     )
 
+    # -------- Safety Controller + Zone Publisher (Keepout & Speed Filters) --------
+    safety_controller = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_share, 'launch', 'safety_controller.launch.py')
+        ),
+        launch_arguments={'use_sim_time': use_sim_time}.items()
+    )
+
     return LaunchDescription([
         declare_world_arg,
         declare_use_sim_time,
@@ -203,6 +211,7 @@ def generate_launch_description():
         rsp,
         joystick,
         twist_mux,
+        safety_controller,
 
         gazebo,
         spawn_entity,

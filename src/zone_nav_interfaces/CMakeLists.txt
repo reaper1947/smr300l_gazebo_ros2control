@@ -14,6 +14,8 @@ find_package(geometry_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/GoToZone.action"
   "action/FollowPath.action"
+  "action/SwitchStackMode.action"
+  "srv/SetStackMode.srv"
   "srv/SaveZone.srv"
   "srv/GoToZone.srv"
   "srv/UploadMap.srv"

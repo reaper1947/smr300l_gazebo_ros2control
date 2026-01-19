@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     pkg_dir = '/home/aun/Downloads/smr300l_gazebo_ros2control-main'
-    nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params_working.yaml')
+    nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params.yaml')
     
     # Read active map from Map Manager config
     active_map_config_file = os.path.join(pkg_dir, 'active_map_config.yaml')

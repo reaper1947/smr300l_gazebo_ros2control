@@ -178,7 +178,7 @@ local_costmap:
       update_frequency: 5.0
       publish_frequency: 2.0
 
-      plugins: ["voxel_layer", "inflation_layer", "keepout_filter"]
+      plugins: ["voxel_layer", "inflation_layer", "keepout_filter", "speed_filter"]
 
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
@@ -217,6 +217,12 @@ local_costmap:
         filter_info_topic: "/costmap_filter_info"
         transform_tolerance: 0.1
 
+      speed_filter:
+        plugin: "nav2_costmap_2d::SpeedFilter"
+        enabled: true
+        filter_info_topic: "/speed_filter_info"
+        transform_tolerance: 0.1
+
 
 global_costmap:
   global_costmap:
@@ -238,7 +244,7 @@ global_costmap:
       resolution: 0.05
       track_unknown_space: true
 
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer", "keepout_filter", "speed_filter"]
 
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -279,6 +285,12 @@ global_costmap:
         plugin: "nav2_costmap_2d::KeepoutFilter"
         enabled: true
         filter_info_topic: "/costmap_filter_info"
+        transform_tolerance: 0.1
+
+      speed_filter:
+        plugin: "nav2_costmap_2d::SpeedFilter"
+        enabled: true
+        filter_info_topic: "/speed_filter_info"
         transform_tolerance: 0.1
 
       always_send_full_costmap: true

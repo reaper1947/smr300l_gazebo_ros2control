@@ -1,9 +1,0 @@
-free_thresh: 0.196
-image: edited_map_20260116.pgm
-negate: 0
-occupied_thresh: 0.65
-origin:
-- -6.99
-- -10.4
-- 0
-resolution: 0.05

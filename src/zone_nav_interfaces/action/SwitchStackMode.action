@@ -1,0 +1,6 @@
+string mode   # "nav" | "slam" | "stop"
+---
+bool ok
+string message
+---
+string status

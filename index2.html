@@ -226,8 +226,6 @@
             position: relative;
             background: var(--bg-primary);
             overflow: hidden;
-            min-width: 0;
-            min-height: 0;
         }
 
         h1 {
@@ -1021,11 +1019,11 @@
         .joystick-container {
             display: flex;
             flex-direction: column;
-            align-items: normal;
+            align-items: center;
             padding: 16px;
             background: var(--bg-elevated);
             border-radius: 6px;
-            margin-top: 15px;
+            margin-top: 12px;
             border: 1px solid var(--border-primary);
         }
 
@@ -1336,10 +1334,12 @@
                                         ontouchend="stopMoving()">v</div>
                                     <div class="joystick-btn left" onmousedown="startMoving('rotate_left')"
                                         onmouseup="stopMoving()" ontouchstart="startMoving('rotate_left')"
-                                        ontouchend="stopMoving()">&lt;</div>
-                                    <div class="joystick-btn right" onmousedown="startMoving('rotate_right')"
-                                        onmouseup="stopMoving()" ontouchstart="startMoving('rotate_right')"
-                                        ontouchend="stopMoving()">&gt;</div>
+                                        ontouchend="stopMoving()">
+                                        << /div>
+                                            <div class="joystick-btn right" onmousedown="startMoving('rotate_right')"
+                                                onmouseup="stopMoving()" ontouchstart="startMoving('rotate_right')"
+                                                ontouchend="stopMoving()">></div>
+                                    </div>
                                     <div class="speed-label">
                                         <span>Speed:</span>
                                         <span id="speed-value">0.3 m/s</span>
@@ -1420,14 +1420,14 @@
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div id="map-container">
-                <canvas id="canvas"></canvas>
-                <div class="zoom-controls">
-                    <button class="zoom-btn" onclick="zoomIn()">+</button>
-                    <button class="zoom-btn" onclick="zoomOut()">-</button>
-                    <button class="zoom-btn" onclick="resetView()">H</button>
+                <div id="map-container">
+                    <canvas id="canvas"></canvas>
+                    <div class="zoom-controls">
+                        <button class="zoom-btn" onclick="zoomIn()">+</button>
+                        <button class="zoom-btn" onclick="zoomOut()">-</button>
+                        <button class="zoom-btn" onclick="resetView()">H</button>
+                    </div>
                 </div>
             </div>
 
@@ -1522,6 +1522,7 @@
                 const ROSBRIDGE_URL = window.ROSBRIDGE_URL || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:9090`;
                 const ROSBRIDGE_MAP_TOPIC = '/map';
                 const ROSBRIDGE_MAP_TYPE = window.ROSBRIDGE_MAP_TYPE || 'nav_msgs/msg/OccupancyGrid';
+                const ROSBRIDGE_MAP_COMPRESSION = window.ROSBRIDGE_MAP_COMPRESSION || 'none';
                 const ROSBRIDGE_AUTO_RECONNECT = window.ROSBRIDGE_AUTO_RECONNECT !== false;
                 let mapData = null;
                 let zones = {};
@@ -1534,20 +1535,6 @@
                 let safetyControllerStopActive = false;
                 let safetyControllerStopReason = '';
                 let canvas, ctx;
-
-                function resizeCanvasToContainer() {
-                    if (!canvas || !ctx) return;
-                    const container = document.getElementById('map-container');
-                    if (!container) return;
-                    const r = container.getBoundingClientRect();
-                    const dpr = window.devicePixelRatio || 1;
-                    // Backing store in device pixels
-                    canvas.width = Math.max(1, Math.floor(r.width * dpr));
-                    canvas.height = Math.max(1, Math.floor(r.height * dpr));
-                    // Draw in CSS pixels
-                    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-                }
-
                 let scale = 1;
                 let offsetX = 0;
                 let offsetY = 0;
@@ -1805,18 +1792,6 @@
                     canvas = document.getElementById('canvas');
                     ctx = canvas.getContext('2d');
 
-                    // Size canvas to its container (CSS pixels)
-                    resizeCanvasToContainer();
-                    window.addEventListener('resize', () => {
-                        resizeCanvasToContainer();
-                        if (mapData && mapData.image) {
-                            const dpr = window.devicePixelRatio || 1;
-                            offsetX = (canvas.width / dpr - mapData.image.width * scale) / 2;
-                            offsetY = (canvas.height / dpr - mapData.image.height * scale) / 2;
-                            drawMap();
-                        }
-                    });
-
                     loadMap();
                     loadZones();
                     loadSavedPaths();
@@ -1888,16 +1863,8 @@
                 let pathRequestInFlight = false;
                 let scanRequestInFlight = false;
 
-
                 function loadMap() {
-                    // Prefer backend /api/map + /api/map/live because it uses TRANSIENT_LOCAL QoS
-                    // (so you get the latched /map even if you connect after map_server publishes once).
-                    loadStaticMap();
-                    refreshLiveMap();
-                    setInterval(refreshLiveMap, 750);
-
-                    // If you still want rosbridge for other realtime topics later, you can keep this:
-                    // initRosbridgeMap();
+                    initRosbridgeMap();
                 }
 
                 function initRosbridgeMap() {
@@ -1948,12 +1915,15 @@
                         return;
                     }
 
-                    mapTopic = new ROSLIB.Topic({
+                    const mapTopicOptions = {
                         ros: ros,
                         name: ROSBRIDGE_MAP_TOPIC,
-                        messageType: ROSBRIDGE_MAP_TYPE,
-                        compression: 'png'
-                    });
+                        messageType: ROSBRIDGE_MAP_TYPE
+                    };
+                    if (ROSBRIDGE_MAP_COMPRESSION && ROSBRIDGE_MAP_COMPRESSION !== 'none') {
+                        mapTopicOptions.compression = ROSBRIDGE_MAP_COMPRESSION;
+                    }
+                    mapTopic = new ROSLIB.Topic(mapTopicOptions);
 
                     mapMessageType = ROSBRIDGE_MAP_TYPE;
                     showStatus(`Map stream active (${mapMessageType})`, 'success');
@@ -1982,17 +1952,15 @@
                             image: img
                         };
 
-                        resizeCanvasToContainer();
+                        canvas.width = window.innerWidth - 320;
+                        canvas.height = window.innerHeight;
                         mapReady = true;
                         liveMapAvailable = true;
                         staticMapLoaded = true;
 
                         if (!window._liveMapCentered) {
-                            const dpr = window.devicePixelRatio || 1;
-                            const cw = canvas.width / dpr;
-                            const ch = canvas.height / dpr;
-                            offsetX = (cw - mapData.image.width * scale) / 2;
-                            offsetY = (ch - mapData.image.height * scale) / 2;
+                            offsetX = (canvas.width - mapData.image.width) / 2;
+                            offsetY = (canvas.height - mapData.image.height) / 2;
                             window._liveMapCentered = true;
                         }
 
@@ -2021,28 +1989,20 @@
                     const ctxMap = canvasMap.getContext('2d');
                     const imgData = ctxMap.createImageData(width, height);
                     for (let i = 0; i < width * height; i++) {
-                        const x = i % width;
-                        const y = Math.floor(i / width);
-                        const fy = (height - 1 - y);
-                        const idx = (fy * width + x) * 4;
-
                         const val = data[i];
+                        let color;
                         if (val === -1) {
-                            imgData.data[idx + 0] = 180;
-                            imgData.data[idx + 1] = 180;
-                            imgData.data[idx + 2] = 180;
-                            imgData.data[idx + 3] = 255;
+                            color = [180, 180, 180, 255];
                         } else if (val === 0) {
-                            imgData.data[idx + 0] = 255;
-                            imgData.data[idx + 1] = 255;
-                            imgData.data[idx + 2] = 255;
-                            imgData.data[idx + 3] = 255;
+                            color = [255, 255, 255, 255];
                         } else {
-                            imgData.data[idx + 0] = 0;
-                            imgData.data[idx + 1] = 0;
-                            imgData.data[idx + 2] = 0;
-                            imgData.data[idx + 3] = 255;
+                            color = [0, 0, 0, 255];
                         }
+                        const idx = i * 4;
+                        imgData.data[idx] = color[0];
+                        imgData.data[idx + 1] = color[1];
+                        imgData.data[idx + 2] = color[2];
+                        imgData.data[idx + 3] = color[3];
                     }
                     ctxMap.putImageData(imgData, 0, 0);
                     setMapData(canvasMap);
@@ -2081,39 +2041,35 @@
                             }
                             lastLiveMapStamp = stampKey;
 
-                            // Create image data (flip Y while writing pixels so ROS map aligns with canvas coords)
+                            // Create image data
                             const canvasMap = document.createElement('canvas');
                             canvasMap.width = width;
                             canvasMap.height = height;
                             const ctxMap = canvasMap.getContext('2d');
                             const imgData = ctxMap.createImageData(width, height);
-
                             for (let i = 0; i < width * height; i++) {
-                                const x = i % width;
-                                const y = Math.floor(i / width);
-                                const fy = (height - 1 - y);
-                                const idx = (fy * width + x) * 4;
-
                                 // ROS OccupancyGrid: -1=unknown, 0=free, 100=occupied
-                                const val = data[i];
+                                let val = data[i];
+                                let color;
                                 if (val === -1) {
-                                    imgData.data[idx + 0] = 180;
-                                    imgData.data[idx + 1] = 180;
-                                    imgData.data[idx + 2] = 180;
-                                    imgData.data[idx + 3] = 255;
+                                    color = [180, 180, 180, 255]; // unknown: gray
                                 } else if (val === 0) {
-                                    imgData.data[idx + 0] = 255;
-                                    imgData.data[idx + 1] = 255;
-                                    imgData.data[idx + 2] = 255;
-                                    imgData.data[idx + 3] = 255;
+                                    color = [255, 255, 255, 255]; // free: white
                                 } else {
-                                    imgData.data[idx + 0] = 0;
-                                    imgData.data[idx + 1] = 0;
-                                    imgData.data[idx + 2] = 0;
-                                    imgData.data[idx + 3] = 255;
+                                    color = [0, 0, 0, 255]; // occupied: black
                                 }
+                                imgData.data[i * 4 + 0] = color[0];
+                                imgData.data[i * 4 + 1] = color[1];
+                                imgData.data[i * 4 + 2] = color[2];
+                                imgData.data[i * 4 + 3] = color[3];
                             }
+                            // Draw image data (flip vertically for ROS)
                             ctxMap.putImageData(imgData, 0, 0);
+                            // Flip vertically
+                            ctxMap.save();
+                            ctxMap.scale(1, -1);
+                            ctxMap.drawImage(canvasMap, 0, -height);
+                            ctxMap.restore();
 
                             // Store mapData for rest of UI
                             mapData = {
@@ -2123,16 +2079,14 @@
                                 height: height,
                                 image: canvasMap
                             };
-                            resizeCanvasToContainer();
+                            canvas.width = window.innerWidth - 320;
+                            canvas.height = window.innerHeight;
                             mapReady = true;
                             liveMapAvailable = true;
                             // Center the map once when switching to live map
                             if (!window._liveMapCentered) {
-                                const dpr = window.devicePixelRatio || 1;
-                                const cw = canvas.width / dpr;
-                                const ch = canvas.height / dpr;
-                                offsetX = (cw - width * scale) / 2;
-                                offsetY = (ch - height * scale) / 2;
+                                offsetX = (canvas.width - width) / 2;
+                                offsetY = (canvas.height - height) / 2;
                                 window._liveMapCentered = true;
                             }
                             drawMap();
@@ -2162,14 +2116,12 @@
                                     height: data.height,
                                     image: img
                                 };
-                                resizeCanvasToContainer();
+                                canvas.width = window.innerWidth - 320;
+                                canvas.height = window.innerHeight;
                                 mapReady = true;
                                 staticMapLoaded = true;
-                                const dpr = window.devicePixelRatio || 1;
-                                const cw = canvas.width / dpr;
-                                const ch = canvas.height / dpr;
-                                offsetX = (cw - img.width * scale) / 2;
-                                offsetY = (ch - img.height * scale) / 2;
+                                offsetX = (canvas.width - img.width) / 2;
+                                offsetY = (canvas.height - img.height) / 2;
                                 drawMap();
                             };
                             img.src = `data:image/png;base64,${data.image}`;
@@ -2548,7 +2500,7 @@
                         ctx.rotate(-robotPose.theta);
 
                         // Draw robot body rectangle
-                        ctx.fillStyle = '#FF0000';
+                        ctx.fillStyle = '#000000';
                         ctx.strokeStyle = 'white';
                         ctx.lineWidth = 3;
                         ctx.fillRect(-robotLength / 2, -robotWidth / 2, robotLength, robotWidth);
@@ -2966,11 +2918,8 @@
                 function resetView() {
                     if (mapData && mapData.image) {
                         scale = 1;
-                        const dpr = window.devicePixelRatio || 1;
-                            const cw = canvas.width / dpr;
-                            const ch = canvas.height / dpr;
-                            offsetX = (cw - mapData.image.width * scale) / 2;
-                            offsetY = (ch - mapData.image.height * scale) / 2;
+                        offsetX = (canvas.width - mapData.image.width) / 2;
+                        offsetY = (canvas.height - mapData.image.height) / 2;
                         updateZoomLevel();
                         drawMap();
                     }
@@ -4264,11 +4213,10 @@
                 });
             </script>
         </div>
-    </div>
-    <!-- End Zone Navigator Tab -->
+        <!-- End Zone Navigator Tab -->
 
-    <!-- Map Editor Tab -->
-    <div id="editor-tab" class="tab-content">
+        <!-- Map Editor Tab -->
+        <div id="editor-tab" class="tab-content">
             <iframe id="editor-iframe" src="/editor" style="width: 100%; height: 100%; border: none;"></iframe>
         </div>
         <!-- End Map Editor Tab -->

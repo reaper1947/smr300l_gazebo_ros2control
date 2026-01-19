@@ -233,8 +233,14 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        map_manager.destroy_node()
-        rclpy.shutdown()
+        try:
+            map_manager.destroy_node()
+        except:
+            pass
+        try:
+            rclpy.shutdown()
+        except:
+            pass  # Already shut down
 
 
 if __name__ == '__main__':

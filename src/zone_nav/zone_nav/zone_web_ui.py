@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
 import rclpy
+from flask import Flask, render_template, jsonify, request, send_from_directory
+from flask_cors import CORS
+from nav_msgs.msg import OccupancyGrid
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+from rclpy.clock import Clock, ClockType
 from zone_nav_interfaces.srv import (
     SaveZone, DeleteZone, UpdateZoneParams, ReorderZones,
     SavePath, DeletePath, SaveLayout, LoadLayout, DeleteLayout,
@@ -21,8 +25,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger, SetBool
 import tf2_ros
 from tf2_ros import TransformException
-from flask import Flask, render_template, jsonify, request, send_from_directory
-from flask_cors import CORS
+from slam_toolbox.srv import SaveMap as SlamSaveMap
 import threading
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError, InvalidStateError
 import queue
@@ -34,18 +37,47 @@ import io
 import base64
 import json
 import numpy as np
+import signal
+import subprocess
+import time
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 
 class ZoneWebServer(Node):
     def __init__(self, executor):
         super().__init__('zone_web_server')
-        
+        # Stack manager service client
+        from zone_nav_interfaces.srv import SetStackMode
+        self.set_stack_mode_client = self.create_client(SetStackMode, '/stack/set_mode')
+        self.current_stack_mode = 'stopped'
         # Store executor reference for thread-safe ROS calls from Flask
         self.executor = executor
 
+        # Live map (OccupancyGrid) subscription
+        self.latest_map_msg = None
+        map_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        self.create_subscription(
+            OccupancyGrid,
+            '/map',
+            self._map_callback,
+            map_qos
+        )
         # Queue for marshaling Flask→ROS calls onto the executor thread(s)
+        # Use a steady clock so this timer still runs when use_sim_time is true
+        # and /clock is not yet publishing.
         self._ros_call_queue = queue.Queue()
-        self.create_timer(0.01, self._process_ros_call_queue)
+        self._ros_call_clock = Clock(clock_type=ClockType.STEADY_TIME)
+        self.create_timer(0.01, self._process_ros_call_queue, clock=self._ros_call_clock)
         
         # TF2 buffer and listener for proper frame transformations
         self.tf_buffer = tf2_ros.Buffer()
@@ -68,11 +100,15 @@ class ZoneWebServer(Node):
         self.set_control_mode_client = self.create_client(SetControlMode, '/set_control_mode')
         self.set_safety_override_client = self.create_client(SetSafetyOverride, '/set_safety_override')
         self.set_estop_client = self.create_client(SetEStop, '/set_estop')
+        # Use ReentrantCallbackGroup to avoid deadlock when called from _process_ros_call_queue (which uses default group)
+        self.safety_status_client = self.create_client(Trigger, 'safety/status', callback_group=self.cb_group)
+        self.safety_override_client = self.create_client(SetBool, 'safety/override', callback_group=self.cb_group)
 
         # Map manager service clients
         self.upload_map_client = self.create_client(UploadMap, '/map_manager/upload_map')
         self.set_active_map_client = self.create_client(SetActiveMap, '/map_manager/set_active_map')
         self.get_active_map_client = self.create_client(GetActiveMap, '/map_manager/get_active_map')
+        self.slam_save_map_client = self.create_client(SlamSaveMap, '/slam_toolbox/save_map')
         
         # Publisher for goal poses
         self.goal_pub = self.create_publisher(PoseStamped, '/goal_pose', 10)
@@ -130,6 +166,10 @@ class ZoneWebServer(Node):
         self.safety_override_active = False  # Manual override flag
         self.last_confidence_warning = 0.0
         self.estop_active = False  # Emergency stop flag
+        
+        # TF lookup warning throttling
+        self._last_tf_warn_front = 0.0
+        self._last_tf_warn_rear = 0.0
         # Robot dimensions: 0.80m × 0.54m, half-width = 0.27m
         # Safety radius = robot half-width (0.27m) + clearance margin (0.08m) = 0.35m
         self.safety_radius = 0.35  # Minimum distance to obstacles (meters)
@@ -160,6 +200,7 @@ class ZoneWebServer(Node):
         # Subscribe to robot position - match AMCL's QoS profile
         self.robot_pose = None
         self.localization_confidence = 0.0
+        self.last_pose_time = None
         qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -174,6 +215,12 @@ class ZoneWebServer(Node):
         )
         
         self.get_logger().info('Subscribed to /amcl_pose with RELIABLE + TRANSIENT_LOCAL QoS')
+        
+        # Timer to log if we're not receiving pose updates (debugging)
+        self.pose_check_timer = self.create_timer(5.0, self._check_pose_reception)
+        
+        # Timer to check topic availability and subscription status
+        self.topic_check_timer = self.create_timer(10.0, self._check_topic_availability)
         
         # Subscribe to navigation path
         self.current_path = None
@@ -233,6 +280,31 @@ class ZoneWebServer(Node):
         
         self.get_logger().info('Zone Web Server node started')
         self.get_logger().info(f'Map: {self.map_info.get("image_path", "Not found")}')
+
+    def _map_callback(self, msg):
+        self.latest_map_msg = msg
+
+    def _lookup_tf_pose(self):
+        """Get robot pose from TF (map -> base_link/base_footprint)."""
+        base_frames = ['base_link', 'base_footprint']
+        for base_frame in base_frames:
+            try:
+                transform = self.tf_buffer.lookup_transform(
+                    'map',
+                    base_frame,
+                    rclpy.time.Time(),
+                    timeout=rclpy.duration.Duration(seconds=0.2)
+                )
+                t = transform.transform.translation
+                q = transform.transform.rotation
+                # Yaw from quaternion
+                siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+                cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+                yaw = math.atan2(siny_cosp, cosy_cosp)
+                return {'x': t.x, 'y': t.y, 'theta': yaw}
+            except (TransformException, tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                continue
+        return None
     
     def call_ros_from_flask(self, ros_func, timeout=2.0):
         """Thread-safe wrapper for calling ROS operations from Flask threads.
@@ -293,12 +365,22 @@ class ZoneWebServer(Node):
     
     def pose_callback(self, msg):
         """Store robot position from AMCL"""
+        # Update last pose reception time
+        self.last_pose_time = self.get_clock().now().nanoseconds / 1e9
+        
         # AMCL publishes PoseWithCovarianceStamped - access nested pose.pose
         self.robot_pose = {
             'x': msg.pose.pose.position.x,
             'y': msg.pose.pose.position.y,
             'theta': 2 * math.atan2(msg.pose.pose.orientation.z, msg.pose.pose.orientation.w)
         }
+        
+        # Log first few callbacks to verify it's working
+        if not hasattr(self, '_pose_callback_count'):
+            self._pose_callback_count = 0
+        self._pose_callback_count += 1
+        if self._pose_callback_count <= 3:
+            self.get_logger().info(f'✓ Pose callback #{self._pose_callback_count} - Robot at ({self.robot_pose["x"]:.2f}, {self.robot_pose["y"]:.2f})')
         
         # Calculate localization confidence from covariance
         # Lower covariance = higher confidence
@@ -313,7 +395,8 @@ class ZoneWebServer(Node):
         # Convert to confidence (0-100%)
         # Lower variance = higher confidence
         # Using exponential decay: confidence = 100 * e^(-k * variance)
-        k = 5.0  # Tuning factor
+        # Tune k to avoid over-aggressive drops; typical AMCL variances ~0.01-0.2
+        k = 1.0  # Previously 5.0; 1.0 provides smoother confidence behavior
         self.localization_confidence = min(100.0, max(0.0, 100.0 * math.exp(-k * pos_variance)))
         
         # Safety check: Stop robot if confidence is too low
@@ -349,6 +432,41 @@ class ZoneWebServer(Node):
         # Log less frequently to avoid spam
         self.get_logger().debug(f'Robot pose updated: x={self.robot_pose["x"]:.2f}, y={self.robot_pose["y"]:.2f}, theta={self.robot_pose["theta"]:.2f}, confidence={self.localization_confidence:.1f}%')
     
+    def _check_pose_reception(self):
+        """Debug helper: Check if we're receiving pose updates"""
+        if self.robot_pose is None:
+            current_time = self.get_clock().now().nanoseconds / 1e9
+            if self.last_pose_time is None or (current_time - self.last_pose_time) > 10.0:
+                self.get_logger().warn('⚠️  No /amcl_pose messages received. Check: 1) AMCL is running, 2) QoS matches (RELIABLE + TRANSIENT_LOCAL), 3) Topic name is correct')
+    
+    def _check_topic_availability(self):
+        """Check if topics exist and subscriptions are working"""
+        try:
+            topics = dict(self.get_topic_names_and_types())
+            
+            # Check pose topic
+            has_amcl_pose = '/amcl_pose' in topics
+            pose_received = self.robot_pose is not None
+            if not has_amcl_pose:
+                self.get_logger().warn('⚠️  /amcl_pose topic not found - AMCL may not be running')
+            elif not pose_received:
+                self.get_logger().warn('⚠️  /amcl_pose exists but no messages received - check QoS or topic publisher')
+            else:
+                self.get_logger().debug(f'✓ /amcl_pose: topic exists, pose received (x={self.robot_pose["x"]:.2f}, y={self.robot_pose["y"]:.2f})')
+            
+            # Check path topic
+            has_plan = '/plan' in topics
+            path_received = self.current_path is not None
+            if not has_plan:
+                self.get_logger().warn('⚠️  /plan topic not found - Nav2 planner may not be running')
+            elif not path_received:
+                self.get_logger().debug('✓ /plan: topic exists but no active path (normal when not navigating)')
+            else:
+                self.get_logger().debug(f'✓ /plan: topic exists, path received ({len(self.current_path)} waypoints)')
+                
+        except Exception as e:
+            self.get_logger().error(f'Error checking topic availability: {e}')
+    
     def path_callback(self, msg):
         """Store the current navigation path"""
         if len(msg.poses) > 0:
@@ -359,9 +477,21 @@ class ZoneWebServer(Node):
                 }
                 for pose in msg.poses
             ]
-            self.get_logger().debug(f'Path updated with {len(self.current_path)} waypoints')
+            # Log first few callbacks to verify it's working
+            if not hasattr(self, '_path_callback_count'):
+                self._path_callback_count = 0
+            self._path_callback_count += 1
+            if self._path_callback_count <= 3:
+                self.get_logger().info(f'✓ Path callback #{self._path_callback_count} - Received {len(self.current_path)} waypoints')
+            else:
+                self.get_logger().debug(f'Path updated with {len(self.current_path)} waypoints')
         else:
             self.current_path = None
+            if not hasattr(self, '_path_callback_count'):
+                self._path_callback_count = 0
+            self._path_callback_count += 1
+            if self._path_callback_count <= 3:
+                self.get_logger().info(f'✓ Path callback #{self._path_callback_count} - Empty path (no navigation active)')
     
     def scan_front_callback(self, msg):
         """Store FRONT lidar scan data (/scan) - transform to map frame using TF2"""
@@ -401,6 +531,11 @@ class ZoneWebServer(Node):
                 angle += msg.angle_increment
                 
         except (TransformException, tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            # Throttled warning - print once every 5 seconds when TF fails
+            current_time = self.get_clock().now().nanoseconds / 1e9
+            if (current_time - self._last_tf_warn_front) > 5.0:
+                self.get_logger().warn(f"TF lookup failed map <- {msg.header.frame_id}: {e}")
+                self._last_tf_warn_front = current_time
             # Silently skip - transforms not available yet or scan too old
             pass
         
@@ -445,6 +580,11 @@ class ZoneWebServer(Node):
                 angle += msg.angle_increment
                 
         except (TransformException, tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            # Throttled warning - print once every 5 seconds when TF fails
+            current_time = self.get_clock().now().nanoseconds / 1e9
+            if (current_time - self._last_tf_warn_rear) > 5.0:
+                self.get_logger().warn(f"TF lookup failed map <- {msg.header.frame_id}: {e}")
+                self._last_tf_warn_rear = current_time
             # Silently skip - transforms not available yet or scan too old
             pass
         
@@ -850,8 +990,8 @@ class ZoneWebServer(Node):
             # Load the PGM/PNG image
             self.map_img = Image.open(img_path)
             
-            # Invert if needed (make occupied=black, free=white)
-            if self.map_info.get('negate', 0) == 0:
+            # Invert only when the map is marked as negated.
+            if self.map_info.get('negate', 0) == 1:
                 self.map_img = Image.eval(self.map_img, lambda x: 255 - x)
             
             # Ensure it's in grayscale mode for editing
@@ -1783,9 +1923,8 @@ class ZoneWebServer(Node):
             # Open PGM and convert to PNG
             img = Image.open(img_path)
             
-            # Invert colors if negate is set
-            if self.map_info.get('negate', 0) == 0:
-                # Make occupied (0) black and free (255) white
+            # Invert colors only when the map is marked as negated.
+            if self.map_info.get('negate', 0) == 1:
                 img = Image.eval(img, lambda x: 255 - x)
             
             # Convert to RGB
@@ -1868,11 +2007,28 @@ def get_robot_pose():
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
     
+    # Debug: Log if pose is None (throttled)
+    pose = ros_node.robot_pose
+    pose_source = 'amcl' if pose is not None else None
+
+    if pose is None:
+        if not hasattr(ros_node, '_last_pose_api_warn') or (time.time() - ros_node._last_pose_api_warn) > 10.0:
+            ros_node.get_logger().warn('API: robot_pose is None - AMCL may not be publishing yet. Check: 1) AMCL is running, 2) /amcl_pose topic exists, 3) QoS matches')
+            ros_node._last_pose_api_warn = time.time()
+        try:
+            pose = ros_node.call_ros_from_flask(ros_node._lookup_tf_pose, timeout=0.6)
+            if pose:
+                pose_source = 'tf'
+        except Exception as e:
+            ros_node.get_logger().debug(f'API: TF pose lookup failed: {e}')
+    
     return jsonify({
-        'pose': ros_node.robot_pose,
+        'pose': pose,
         'confidence': ros_node.localization_confidence,
         'safety_stop': ros_node.safety_stop_active,
-        'override_active': ros_node.safety_override_active
+        'override_active': ros_node.safety_override_active,
+        'has_pose': pose is not None,  # Help frontend know if pose is available
+        'pose_source': pose_source
     })
 
 
@@ -1881,6 +2037,16 @@ def get_path():
     """Get current navigation path"""
     if ros_node is None:
         return jsonify({'error': 'ROS node not initialized'}), 500
+    
+    # Debug: Log path status (throttled)
+    if ros_node.current_path is None:
+        if not hasattr(ros_node, '_last_path_api_warn') or (time.time() - ros_node._last_path_api_warn) > 10.0:
+            ros_node.get_logger().debug('API: current_path is None - No active navigation path (normal when not navigating)')
+            ros_node._last_path_api_warn = time.time()
+    else:
+        if not hasattr(ros_node, '_last_path_api_log') or (time.time() - ros_node._last_path_api_log) > 5.0:
+            ros_node.get_logger().debug(f'API: Returning path with {len(ros_node.current_path)} waypoints')
+            ros_node._last_path_api_log = time.time()
     
     return jsonify({'path': ros_node.current_path})
 
@@ -2202,7 +2368,120 @@ def force_resume():
     
     # Direct call is safe - simple state modification
     result = ros_node.force_resume_navigation()
-    return jsonify(result)
+
+    override_result = None
+
+    def call_override():
+        if not ros_node.safety_override_client.wait_for_service(timeout_sec=0.5):
+            return {'ok': False, 'message': 'Safety override service not available'}
+        req = SetBool.Request()
+        req.data = True
+        future = ros_node.safety_override_client.call_async(req)
+        done_event = threading.Event()
+
+        def _on_done(_):
+            done_event.set()
+
+        future.add_done_callback(_on_done)
+        if not done_event.wait(timeout=1.0):
+            return {'ok': False, 'message': 'Timeout waiting for safety override'}
+        res = future.result()
+        return {'ok': bool(res.success), 'message': str(res.message)}
+
+    try:
+        override_result = ros_node.call_ros_from_flask(call_override, timeout=3.0)
+    except Exception:
+        override_result = None
+
+    ok = bool(result.get('ok')) or (override_result and override_result.get('ok'))
+    message_parts = [result.get('message', '')] if result else []
+    if override_result:
+        message_parts.append(override_result.get('message', ''))
+    message = ' '.join(part for part in message_parts if part)
+
+    return jsonify({'ok': ok, 'message': message or 'Safety override requested'})
+
+
+@app.route('/api/safety/override', methods=['POST'])
+def set_safety_override():
+    """Enable/disable safety override in SafetyController"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+
+    data = request.get_json(force=True) or {}
+    enable = bool(data.get('enable', True))
+
+    def call_override():
+        if not ros_node.safety_override_client.wait_for_service(timeout_sec=0.5):
+            return {'ok': False, 'message': 'Safety override service not available'}
+        req = SetBool.Request()
+        req.data = enable
+        future = ros_node.safety_override_client.call_async(req)
+        done_event = threading.Event()
+
+        def _on_done(_):
+            done_event.set()
+
+        future.add_done_callback(_on_done)
+        if not done_event.wait(timeout=1.0):
+            return {'ok': False, 'message': 'Timeout waiting for safety override'}
+        res = future.result()
+        return {'ok': bool(res.success), 'message': str(res.message)}
+
+    try:
+        result = ros_node.call_ros_from_flask(call_override, timeout=3.0)
+        return jsonify(result), 200 if result.get('ok') else 500
+    except Exception as e:
+        return jsonify({'ok': False, 'message': str(e)}), 500
+
+
+@app.route('/api/safety/status', methods=['GET'])
+def get_safety_status():
+    """Get SafetyController status (low confidence/obstacle stops)."""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+
+    def call_status():
+        if not ros_node.safety_status_client.wait_for_service(timeout_sec=0.5):
+            return {'ok': False, 'message': 'Safety status service not available'}
+        req = Trigger.Request()
+        future = ros_node.safety_status_client.call_async(req)
+        done_event = threading.Event()
+
+        def _on_done(_):
+            done_event.set()
+
+        future.add_done_callback(_on_done)
+        if not done_event.wait(timeout=1.0):
+            return {'ok': False, 'message': 'Timeout waiting for safety status'}
+        res = future.result()
+        return {'ok': bool(res.success), 'message': str(res.message)}
+
+    try:
+        result = ros_node.call_ros_from_flask(call_status, timeout=3.0)
+    except Exception as e:
+        return jsonify({'ok': False, 'message': str(e)}), 500
+
+    if not result.get('ok'):
+        return jsonify(result), 500
+
+    message = result.get('message', '')
+    msg_lower = message.lower()
+    low_conf = 'low confidence stop: active' in msg_lower
+    obstacle = 'obstacle stop: active' in msg_lower
+    manual_override = 'manual override: enabled' in msg_lower
+    estop = 'e-stop: active' in msg_lower
+    active = low_conf or obstacle or estop
+
+    return jsonify({
+        'ok': True,
+        'active': active,
+        'low_confidence_stop': low_conf,
+        'obstacle_stop': obstacle,
+        'manual_override': manual_override,
+        'estop_active': estop,
+        'message': message
+    })
 
 
 @app.route('/api/sequence/start', methods=['POST'])
@@ -2919,6 +3198,89 @@ def run_flask():
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
 
+def cleanup_ros_processes():
+    """Kill all ROS-related processes when web UI shuts down"""
+    print("\n🧹 Cleaning up ROS processes...")
+    
+    # Patterns to match ROS-related process names
+    ros_process_patterns = [
+        'ros2', 'nav2', 'amcl', 'slam_toolbox', 'map_server',
+        'planner_server', 'controller_server', 'bt_navigator',
+        'behavior_server', 'lifecycle_manager', 'rviz2',
+        'gazebo', 'gzserver', 'gzclient'
+    ]
+    
+    killed_count = 0
+    
+    if PSUTIL_AVAILABLE:
+        try:
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    proc_info = proc.info
+                    name = proc_info.get('name', '').lower()
+                    cmdline = ' '.join(proc_info.get('cmdline', [])).lower()
+                    
+                    # Check if process matches any ROS pattern
+                    matches = False
+                    for pattern in ros_process_patterns:
+                        if pattern in name or pattern in cmdline:
+                            # Skip our own process
+                            if proc.pid != os.getpid():
+                                matches = True
+                                break
+                    
+                    if matches:
+                        try:
+                            print(f"  Killing process {proc.pid}: {name}")
+                            proc.terminate()
+                            killed_count += 1
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+            
+            # Wait for graceful shutdown
+            if killed_count > 0:
+                time.sleep(2)
+                
+                # Force kill any remaining
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    try:
+                        proc_info = proc.info
+                        name = proc_info.get('name', '').lower()
+                        cmdline = ' '.join(proc_info.get('cmdline', [])).lower()
+                        
+                        for pattern in ros_process_patterns:
+                            if pattern in name or pattern in cmdline:
+                                if proc.pid != os.getpid():
+                                    try:
+                                        proc.kill()
+                                    except:
+                                        pass
+                                    break
+                    except:
+                        continue
+                        
+        except Exception as e:
+            print(f"  Error during cleanup: {e}")
+    else:
+        # Fallback: use pkill
+        try:
+            for pattern in ros_process_patterns:
+                try:
+                    subprocess.run(['pkill', '-f', pattern], 
+                                 timeout=2, capture_output=True)
+                except:
+                    pass
+        except Exception as e:
+            print(f"  Error during cleanup: {e}")
+    
+    if killed_count > 0:
+        print(f"✓ Cleaned up {killed_count} ROS processes")
+    else:
+        print("  No ROS processes found to clean up")
+
+
 def main(args=None):
     global ros_node
     
@@ -2926,27 +3288,239 @@ def main(args=None):
     
     # Create executor first
     executor = MultiThreadedExecutor(num_threads=4)
-    
+
     # Pass executor to node for thread-safe Flask→ROS calls
     ros_node = ZoneWebServer(executor)
-    
+
+    # Import and create StackManager node
+    from .stack_manager import StackManager
+    stack_manager_node = StackManager()
+
     # Start Flask in a separate thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    
+
     ros_node.get_logger().info('Web UI available at: http://localhost:5000')
-    
-    # Add node to executor
+
+    # Add nodes to executor
     executor.add_node(ros_node)
-    
+    executor.add_node(stack_manager_node)
+
     try:
         executor.spin()
     except KeyboardInterrupt:
-        pass
+        print("\n⚠️  Shutdown requested...")
     finally:
-        ros_node.destroy_node()
-        rclpy.shutdown()
+        # Stop any stack processes started by StackManager
+        try:
+            stack_manager_node._stop_nav()
+            stack_manager_node._stop_slam()
+        except Exception as e:
+            print(f"  StackManager stop error: {e}")
+
+        # Clean up ROS processes first
+        cleanup_ros_processes()
+        
+        # Then clean up nodes
+        try:
+            ros_node.destroy_node()
+            stack_manager_node.destroy_node()
+        except:
+            pass
+        try:
+            rclpy.shutdown()
+        except:
+            pass  # Already shut down
+        
+        print("✓ Shutdown complete")
+
+@app.route('/api/stack/mode', methods=['POST'])
+def set_stack_mode():
+    """Switch between NAV, SLAM, STOP modes via ROS service (thread-safe)"""
+    if ros_node is None:
+        return jsonify({'ok': False, 'message': 'ROS node not initialized'}), 500
+
+    data = request.get_json(force=True)
+    mode = (data.get('mode') or '').lower()
+    if mode not in ['nav', 'slam', 'stop']:
+        return jsonify({'ok': False, 'message': 'Invalid mode'}), 400
+
+    from zone_nav_interfaces.srv import SetStackMode
+    if not ros_node.set_stack_mode_client.wait_for_service(timeout_sec=2.0):
+        return jsonify({'ok': False, 'message': 'StackManager service not available'}), 500
+
+    req = SetStackMode.Request()
+    req.mode = mode
+    future = ros_node.set_stack_mode_client.call_async(req)
+
+    end_time = time.time() + 10.0
+    while time.time() < end_time:
+        if future.done():
+            try:
+                res = future.result()
+            except Exception as e:
+                ros_node.get_logger().error(f'/api/stack/mode result error: {e}')
+                return jsonify({'ok': False, 'message': str(e)}), 500
+            if res.ok:
+                ros_node.current_stack_mode = mode
+            return jsonify({'ok': bool(res.ok), 'message': str(res.message)}), 200 if res.ok else 500
+        time.sleep(0.05)
+
+    return jsonify({'ok': False, 'message': 'Timeout waiting for stack switch'}), 500
 
 
-if __name__ == '__main__':
-    main()
+@app.route('/api/stack/status', methods=['GET'])
+def get_stack_status():
+    """Get current stack mode (nav/slam/stop)"""
+    mode = getattr(ros_node, 'current_stack_mode', 'stopped')
+    return jsonify({'ok': True, 'mode': mode})
+
+
+@app.route('/api/slam/save_map', methods=['POST'])
+def save_slam_map():
+    """Save the current SLAM map to disk via slam_toolbox."""
+    if ros_node is None:
+        return jsonify({'ok': False, 'message': 'ROS node not initialized'}), 500
+
+    data = request.get_json(force=True) or {}
+    map_name = (data.get('map_name') or '').strip()
+    set_active = bool(data.get('set_active', False))
+
+    if not map_name:
+        map_name = time.strftime('slam_map_%Y%m%d_%H%M%S')
+
+    if '/' in map_name or '\\' in map_name:
+        return jsonify({'ok': False, 'message': 'Invalid map name'}), 400
+
+    maps_dir = os.path.expanduser('/home/aun/Downloads/smr300l_gazebo_ros2control-main/maps')
+    map_base = os.path.join(maps_dir, map_name)
+
+    if not ros_node.slam_save_map_client.wait_for_service(timeout_sec=2.0):
+        return jsonify({'ok': False, 'message': 'slam_toolbox save_map service not available'}), 500
+
+    req = SlamSaveMap.Request()
+    req.name.data = map_base
+
+    future = ros_node.slam_save_map_client.call_async(req)
+
+    end_time = time.time() + 10.0
+    while time.time() < end_time:
+        if future.done():
+            try:
+                res = future.result()
+            except Exception as e:
+                ros_node.get_logger().error(f'/api/slam/save_map result error: {e}')
+                return jsonify({'ok': False, 'message': str(e)}), 500
+
+            if res.result != SlamSaveMap.Response.RESULT_SUCCESS:
+                return jsonify({'ok': False, 'message': f'SLAM map save failed (code {res.result})'}), 500
+
+            map_yaml_path = map_base + '.yaml'
+            map_pgm_path = map_base + '.pgm'
+
+            active_message = None
+            if set_active:
+                try:
+                    req_active = SetActiveMap.Request()
+                    req_active.map_yaml_path = map_yaml_path
+                    active_result = ros_node.call_map_service(
+                        ros_node.set_active_map_client,
+                        req_active,
+                        timeout=3.0
+                    )
+                    if active_result and active_result.success:
+                        active_message = active_result.message
+                    else:
+                        active_message = active_result.message if active_result else 'Failed to set active map'
+                except Exception as e:
+                    active_message = f'Failed to set active map: {e}'
+
+            message = f'Map saved: {map_name}'
+            if active_message:
+                message = f'{message}. {active_message}'
+
+            return jsonify({
+                'ok': True,
+                'message': message,
+                'map_name': map_name,
+                'map_yaml_path': map_yaml_path,
+                'map_pgm_path': map_pgm_path,
+                'set_active': set_active
+            }), 200
+
+        time.sleep(0.05)
+
+    return jsonify({'ok': False, 'message': 'Timeout waiting for slam_toolbox save_map'}), 500
+
+
+@app.route('/api/stack/health', methods=['GET'])
+def stack_health():
+    """Get stack health diagnostics - check for missing topics/nodes"""
+    if ros_node is None:
+        return jsonify({'ok': False, 'message': 'ROS node not initialized'}), 500
+
+    def check():
+        # Cheap checks: topics + TF
+        topics = set(ros_node.get_topic_names_and_types())
+        nodes = set(ros_node.get_node_names())
+
+        health = {
+            'has_amcl_pose': '/amcl_pose' in topics,
+            'has_map': '/map' in topics,
+            'has_tf': '/tf' in topics,
+            'has_tf_static': '/tf_static' in topics,
+            'has_scan': '/scan' in topics,
+            'has_scan2': '/scan2' in topics,
+            'robot_pose_seen': ros_node.robot_pose is not None,
+            'confidence': ros_node.localization_confidence,
+            'current_mode': ros_node.current_mode,
+            'stack_mode': ros_node.current_stack_mode,
+        }
+        return health
+
+    try:
+        return jsonify(ros_node.call_ros_from_flask(check, timeout=2.0))
+    except Exception as e:
+        return jsonify({'ok': False, 'message': str(e)}), 500
+
+
+@app.route('/api/map/live')
+def get_live_map():
+    """Get the latest live occupancy grid from /map as raw data (dynamic map)"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+
+    msg = ros_node.latest_map_msg
+    if msg is None:
+        # Return 200 with ok=False to avoid 404 console spam
+        return jsonify({'ok': False, 'error': 'No live map data received yet'}), 200
+
+    # Convert OccupancyGrid to a JSON-serializable structure compatible with frontend expectations
+    return jsonify({
+        'ok': True,
+        'map': {
+            'stamp': {
+                'sec': msg.header.stamp.sec,
+                'nanosec': msg.header.stamp.nanosec,
+            },
+            'info': {
+                'width': msg.info.width,
+                'height': msg.info.height,
+                'resolution': msg.info.resolution,
+                'origin': {
+                    'position': {
+                        'x': msg.info.origin.position.x,
+                        'y': msg.info.origin.position.y,
+                        'z': msg.info.origin.position.z,
+                    },
+                    'orientation': {
+                        'x': msg.info.origin.orientation.x,
+                        'y': msg.info.origin.orientation.y,
+                        'z': msg.info.origin.orientation.z,
+                        'w': msg.info.origin.orientation.w,
+                    }
+                }
+            },
+            'data': list(msg.data)  # Convert from array to list for JSON
+        }
+    })

@@ -113,9 +113,19 @@ class ScanMerger(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = ScanMerger()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        try:
+            node.destroy_node()
+        except:
+            pass
+        try:
+            rclpy.shutdown()
+        except:
+            pass  # Already shut down
 
 
 if __name__ == '__main__':

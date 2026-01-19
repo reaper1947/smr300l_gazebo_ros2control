@@ -1,8 +1,12 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 slam_toolbox:
 =======
 x`slam_toolbox:
 >>>>>>> 51bf80f (web ui nav update)
+=======
+slam_toolbox:
+>>>>>>> a0062e6 (Add live map support, stack management, and UI improvements)
   ros__parameters:
 
     # Plugin params
@@ -16,7 +20,7 @@ x`slam_toolbox:
     # ROS Parameters
     odom_frame: odom
     map_frame: map
-    base_frame: base_footprint
+    base_frame: base_link
     scan_topic: /scan
     use_map_saver: true
 <<<<<<< HEAD

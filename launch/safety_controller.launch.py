@@ -10,5 +10,6 @@ def generate_launch_description():
             name='safety_controller',
             output='screen',
             parameters=[{'use_sim_time': True}]
-        )
+        ),
+        
     ])

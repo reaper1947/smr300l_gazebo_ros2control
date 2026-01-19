@@ -67,4 +67,15 @@ def generate_launch_description():
                 'use_sim_time': True
             }]
         ),
+
+        # Zone publisher node - publishes keepout/speed filter info and masks
+        Node(
+            package='zone_nav',
+            executable='zone_publisher',
+            name='zone_publisher',
+            output='screen',
+            parameters=[{
+                'use_sim_time': True
+            }]
+        ),
     ])
