@@ -13,724 +13,1002 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #1a1a1a;
-            color: white;
+            background: #101317;
+            color: #e6e6e6;
             height: 100vh;
             overflow: hidden;
         }
 
-        .editor-container {
+        .editor-root {
             display: flex;
-            height: 100%;
+            flex-direction: column;
+            height: 100vh;
         }
 
-        .toolbar-left {
-            width: 250px;
-            background: #2a2a2a;
-            padding: 20px;
-            overflow-y: auto;
-            border-right: 2px solid #444;
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 16px;
+            background: #1b2026;
+            border-bottom: 1px solid #2c343d;
+            flex-wrap: wrap;
         }
 
-        .tool-section {
-            margin-bottom: 25px;
-        }
-
-        .tool-section h3 {
-            color: #667eea;
-            font-size: 14px;
-            margin-bottom: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .tool-btn {
-            width: 100%;
-            padding: 10px;
-            margin: 6px 0;
-            background: #3a3a3a;
-            border: 2px solid #555;
-            color: white;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-            transition: all 0.2s;
-            text-align: left;
-        }
-
-        .tool-btn:hover {
-            background: #4a4a4a;
-            border-color: #667eea;
-            transform: translateX(3px);
-        }
-
-        .tool-btn.active {
-            background: #667eea;
-            border-color: #667eea;
-            box-shadow: 0 0 15px rgba(102, 126, 234, 0.5);
-        }
-
-        .action-btn {
-            width: 100%;
-            padding: 10px;
-            margin: 6px 0;
-            background: #ff6b6b;
-            border: none;
-            color: white;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-
-        .action-btn:hover {
-            background: #ee5a5a;
-            transform: scale(1.02);
-        }
-
-        .action-btn.success {
-            background: #51cf66;
-        }
-
-        .action-btn.success:hover {
-            background: #40c057;
-        }
-
-        .speed-input {
+        .tool-group {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin: 10px 0;
-            padding: 8px;
-            background: #3a3a3a;
+        }
+
+        .tool-btn {
+            padding: 8px 12px;
+            border: 1px solid #36414c;
+            background: #2a323b;
+            color: #e6e6e6;
             border-radius: 6px;
-        }
-
-        .speed-input label {
-            font-size: 12px;
-            color: #aaa;
-        }
-
-        .speed-input input {
-            width: 60px;
-            padding: 5px;
-            background: #2a2a2a;
-            border: 1px solid #555;
-            color: white;
-            border-radius: 4px;
-        }
-
-        .layer-checkbox {
-            display: flex;
-            align-items: center;
-            margin: 8px 0;
             cursor: pointer;
-        }
-
-        .layer-checkbox input {
-            margin-right: 8px;
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
-
-        .canvas-area {
-            flex: 1;
-            background: #1a1a1a;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            position: relative;
-            overflow: hidden;
-        }
-
-        #map-canvas {
-            max-width: 100%;
-            max-height: 100%;
-            cursor: crosshair;
-            background: white;
-            box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
-        }
-
-        .coords-display {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: rgba(0, 0, 0, 0.9);
-            color: #00ff00;
-            padding: 10px 15px;
-            border-radius: 6px;
-            font-family: 'Courier New', monospace;
             font-size: 13px;
-            border: 1px solid #00ff00;
-        }
-
-        .instructions {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(102, 126, 234, 0.95);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 25px;
-            font-size: 14px;
-            font-weight: 500;
-            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.5);
-        }
-
-        .status-bar {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: #2a2a2a;
-            color: white;
-            padding: 10px 20px;
-            display: flex;
-            justify-content: space-between;
-            border-top: 2px solid #444;
-            font-size: 13px;
-        }
-
-        .measurement-result {
-            background: #fff3cd;
-            border: 2px solid #ffc107;
-            border-radius: 6px;
-            padding: 10px;
-            margin-top: 10px;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            text-align: center;
             font-weight: 600;
-            color: #856404;
+            transition: all 0.15s ease;
+        }
+
+        .tool-btn:hover {
+            background: #354150;
+            border-color: #4b5a6b;
+        }
+
+        .tool-btn.active {
+            background: #3a6ea5;
+            border-color: #3a6ea5;
+            box-shadow: 0 0 12px rgba(58, 110, 165, 0.4);
+        }
+
+        .brush-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #b6c0ca;
+        }
+
+        .brush-label input {
+            accent-color: #3a6ea5;
+        }
+
+        .brush-value {
+            min-width: 28px;
+            text-align: right;
+            font-size: 12px;
+            color: #9fb0c1;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #7f8a96;
+        }
+
+        .canvas-wrap {
+            position: relative;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0d1014;
+        }
+
+        #editor {
+            max-width: 96vw;
+            max-height: 86vh;
+            background: #0f1318;
+            border: 1px solid #2c343d;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+            touch-action: none;
+            cursor: crosshair;
+        }
+
+        .status {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            background: rgba(20, 24, 30, 0.9);
+            border: 1px solid #2c343d;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #c6d2dd;
+        }
+
+        .zone-label {
+            position: absolute;
+            pointer-events: none;
+            font-size: 11px;
+            color: #ffffff;
+            background: rgba(20, 24, 30, 0.75);
+            padding: 2px 6px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            white-space: nowrap;
+        }
+
+        .layout-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid #36414c;
+            background: #2a323b;
+            font-size: 12px;
+            color: #cdd7e2;
+        }
+
+        .layout-chip.is-empty {
+            border-color: #6a3b3b;
+            background: #3a2323;
+            color: #f8b7b7;
         }
     </style>
 </head>
 <body>
-    <div class="editor-container">
-        <div class="toolbar-left">
-            <div class="tool-section" style="background: #667eea; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <h3 style="color: white; margin-bottom: 8px;">Current Map</h3>
-                <div id="map-name" style="color: white; font-size: 12px; word-break: break-all;">Loading...</div>
+    <div class="editor-root">
+        <header class="toolbar" id="toolbar">
+            <div class="tool-group">
+                <button class="tool-btn active" data-tool="add">Add</button>
+                <button class="tool-btn" data-tool="erase">Erase</button>
+                <button class="tool-btn" data-tool="move_zone">Move Zone</button>
+                <button class="tool-btn" data-tool="rotate_zone">Rotate Zone</button>
+                <button class="tool-btn" data-tool="add_path">Add Path</button>
+                <button class="tool-btn" id="move-origin-toggle">Move Origin</button>
             </div>
-            
-            <div class="tool-section">
-                <h3>🔨 Drawing Tools</h3>
-                <button class="tool-btn" data-tool="obstacle-rect">⬛ Obstacle Rectangle</button>
-                <button class="tool-btn" data-tool="obstacle-circle">⚫ Obstacle Circle</button>
-                <button class="tool-btn" data-tool="obstacle-poly">🔷 Obstacle Polygon</button>
+            <div class="tool-group">
+                <span id="layout-chip" class="layout-chip">Layout: loading...</span>
             </div>
-
-            <div class="tool-section">
-                <h3>Zone Tools</h3>
-                <button class="tool-btn" data-tool="nogo">No-Go Zone</button>
-                <button class="tool-btn" data-tool="slow">Slow Zone</button>
-                <div class="speed-input">
-                    <label>Speed:</label>
-                    <input type="number" id="speed-limit" value="0.2" step="0.1" min="0.1" max="1.0">
-                    <span style="color: #aaa;">m/s</span>
-                </div>
-                <button class="tool-btn" data-tool="restricted">⛔ Restricted Area</button>
-            </div>
-
-            <div class="tool-section">
-                <h3>Measurement</h3>
-                <button class="tool-btn" data-tool="measure">Measure Distance</button>
-                <div id="measurement-result" class="measurement-result" style="display: none;">--</div>
-            </div>
-
-            <div class="tool-section">
-                <h3>👁️ Layers</h3>
-                <label class="layer-checkbox">
-                    <input type="checkbox" id="layer-obstacles" checked>
-                    <span>Obstacles</span>
+            <div class="tool-group">
+                <label class="brush-label">
+                    Shift X
+                    <input id="origin-x" type="number" step="0.01" value="0">
                 </label>
-                <label class="layer-checkbox">
-                    <input type="checkbox" id="layer-nogo" checked>
-                    <span>No-Go Zones</span>
+                <label class="brush-label">
+                    Shift Y
+                    <input id="origin-y" type="number" step="0.01" value="0">
                 </label>
-                <label class="layer-checkbox">
-                    <input type="checkbox" id="layer-slow" checked>
-                    <span>Slow Zones</span>
+                <label class="brush-label">
+                    Map Yaw
+                    <input id="origin-yaw" type="number" step="0.01" value="0">
                 </label>
-                <label class="layer-checkbox">
-                    <input type="checkbox" id="layer-restricted" checked>
-                    <span>Restricted</span>
-                </label>
+                <button class="tool-btn" id="origin-apply">Apply</button>
+                <button class="tool-btn" id="origin-reset">Recenter</button>
             </div>
+            <div class="tool-group">
+                <label class="brush-label">
+                    Brush
+                    <input id="brush" type="range" min="2" max="60" value="14">
+                </label>
+                <span id="brush-value" class="brush-value">14</span>
+                <button class="tool-btn" id="undo-btn">Undo</button>
+            </div>
+            <div class="tool-group hint">Move Origin drags origin marker. Shift X/Y moves map image.</div>
+        </header>
 
-            <div class="tool-section">
-                <h3>Actions</h3>
-                <button class="action-btn" onclick="clearLayer('obstacles')">Clear Obstacles</button>
-                <button class="action-btn" onclick="clearLayer('no_go_zones')">Clear No-Go</button>
-                <button class="action-btn" onclick="clearLayer('slow_zones')">Clear Slow</button>
-                <button class="action-btn" onclick="clearAllLayers()">Clear All</button>
-                <button class="action-btn success" onclick="saveToCurrentMap()" style="margin-top: 15px;">
-                    Save to Current Map
-                </button>
-                <button class="action-btn" onclick="exportMap()" style="background: #4CAF50;">
-                    Export as New Map
-                </button>
-                <button class="action-btn" onclick="reloadMap()" style="background: #2196F3;">
-                    Reload Map
-                </button>
-            </div>
-        </div>
-
-        <div class="canvas-area">
-            <canvas id="map-canvas"></canvas>
-            <div class="coords-display" id="coords-display">X: -- Y: --</div>
-            <div class="instructions" id="instructions">Select a tool to begin editing</div>
-            <div class="status-bar">
-                <span id="status-text">Ready</span>
-                <span id="object-count">Objects: 0</span>
-            </div>
-        </div>
+        <main class="canvas-wrap">
+            <canvas id="editor"></canvas>
+            <div class="status" id="status">Loading map...</div>
+        </main>
     </div>
 
     <script>
-        const API_BASE = '/api/editor';
-        
-        let mapInfo = null;
-        let mapImage = null;
-        let currentTool = null;
-        let drawingPoints = [];
-        let tempDrawing = null;
-        let layers = {};
-        
-        const canvas = document.getElementById('map-canvas');
-        const ctx = canvas.getContext('2d');
-        
-        // Initialize
-        async function init() {
-            await loadMapInfo();
-            await loadLayers();
-            await loadMapPreview();
-            setupEventListeners();
-            updateStatus('Ready to edit');
+        const canvas = document.getElementById("editor");
+        const ctx = canvas.getContext("2d");
+        const brushSlider = document.getElementById("brush");
+        const brushValue = document.getElementById("brush-value");
+        const statusEl = document.getElementById("status");
+        const originXInput = document.getElementById("origin-x");
+        const originYInput = document.getElementById("origin-y");
+        const originYawInput = document.getElementById("origin-yaw");
+        const originApplyBtn = document.getElementById("origin-apply");
+        const originResetBtn = document.getElementById("origin-reset");
+        const undoBtn = document.getElementById("undo-btn");
+        const layoutChip = document.getElementById("layout-chip");
+        const moveOriginToggle = document.getElementById("move-origin-toggle");
+
+        const API = {
+            map: "/api/map",
+            stopStack: "/api/stack/mode",
+            robotPose: "/api/robot/pose",
+            overwrite: "/api/editor/map/overwrite",
+            zones: "/api/zones",
+            zoneUpdate: "/api/zones/update",
+            paths: "/api/paths",
+            pathSave: "/api/path/save",
+            layouts: "/api/layouts"
+        };
+
+        const editCanvas = document.createElement("canvas");
+        const editCtx = editCanvas.getContext("2d");
+
+        const state = {
+            tool: "add",
+            brush: Number(brushSlider.value),
+            pointerDown: false,
+            dragStart: null,
+            startYaw: 0,
+            startOriginPx: 0,
+            startOriginPy: 0,
+            mapInfo: null,
+            origin: { x: 0, y: 0, yaw: 0 },
+            originPx: 0,
+            originPy: 0,
+            initialOrigin: { x: 0, y: 0, yaw: 0 },
+            robotPose: null,
+            saveTimer: null,
+            mapReady: false,
+            zones: new Map(),
+            paths: new Map(),
+            draggingZoneId: null,
+            dragOffsetMap: null,
+            pendingFromZone: null,
+            undoStack: [],
+            strokeSnapshot: null,
+            draggingOrigin: false,
+            rotatingZoneId: null,
+            rotateStartYaw: 0,
+            rotateStartAngle: 0,
+            currentLayout: null,
+            moveOriginEnabled: false
+        };
+
+        function updateStatus(text) {
+            statusEl.textContent = text;
         }
-        
-        async function loadMapInfo() {
-            
-            // Display current map name
-            const mapPath = window.location.origin + '/maps/smr_map.pgm';
-            document.getElementById('map-name').textContent = 'smr_map.pgm (Active Navigation Map)';
-            const response = await fetch('/api/map');
-            const data = await response.json();
-            mapInfo = {
-                width: data.width,
-                height: data.height,
-                resolution: data.resolution,
-                origin: data.origin
+
+        function setLayoutStatus(name) {
+            if (name) {
+                layoutChip.textContent = `Layout: ${name}`;
+                layoutChip.classList.remove("is-empty");
+            } else {
+                layoutChip.textContent = "Layout: none";
+                layoutChip.classList.add("is-empty");
+            }
+        }
+
+        function setTool(tool) {
+            if ((tool === "move_zone" || tool === "rotate_zone" || tool === "add_path") && !state.currentLayout) {
+                updateStatus("Load a layout to edit zones/paths");
+                return;
+            }
+            state.tool = tool;
+            document.querySelectorAll(".tool-btn[data-tool]").forEach(btn => {
+                btn.classList.toggle("active", btn.dataset.tool === tool);
+            });
+            updateStatus(`Tool: ${tool}`);
+        }
+
+        document.querySelectorAll("#toolbar button[data-tool]").forEach(btn => {
+            btn.addEventListener("click", () => setTool(btn.dataset.tool));
+        });
+
+        moveOriginToggle.addEventListener("click", () => {
+            state.moveOriginEnabled = !state.moveOriginEnabled;
+            moveOriginToggle.classList.toggle("active", state.moveOriginEnabled);
+            updateStatus(state.moveOriginEnabled ? "Move Origin enabled" : "Move Origin disabled");
+        });
+
+        brushSlider.addEventListener("input", () => {
+            state.brush = Number(brushSlider.value);
+            brushValue.textContent = String(state.brush);
+        });
+
+        undoBtn.addEventListener("click", () => {
+            if (!state.mapReady || state.undoStack.length === 0) {
+                updateStatus("Nothing to undo");
+                return;
+            }
+            const snapshot = state.undoStack.pop();
+            editCtx.putImageData(snapshot, 0, 0);
+            draw();
+            saveEdits("undo");
+        });
+
+        function syncOriginInputs() {
+            originXInput.value = "0.000";
+            originYInput.value = "0.000";
+            originYawInput.value = state.origin.yaw.toFixed(3);
+        }
+
+        function applyOriginInputs() {
+            const dx = Number(originXInput.value);
+            const dy = Number(originYInput.value);
+            const yaw = Number(originYawInput.value);
+
+            if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(yaw)) {
+                updateStatus("Invalid map shift values");
+                return;
+            }
+
+            if (dx !== 0 || dy !== 0) {
+                translateMapImage(dx, dy);
+            }
+
+            state.origin.yaw = yaw;
+            draw();
+            saveEdits("map-shift");
+            syncOriginInputs();
+        }
+
+        originApplyBtn.addEventListener("click", applyOriginInputs);
+        originResetBtn.addEventListener("click", () => {
+            state.origin = { ...state.initialOrigin };
+            updateOriginPixel();
+            syncOriginInputs();
+            draw();
+            saveEdits("recenter");
+        });
+
+        function rotatePoint(x, y, angle, ox, oy) {
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            const dx = x - ox;
+            const dy = y - oy;
+            return {
+                x: ox + dx * cos - dy * sin,
+                y: oy + dx * sin + dy * cos
             };
         }
-        
-        async function loadLayers() {
-            const response = await fetch(`${API_BASE}/layers`);
-            layers = await response.json();
-            updateObjectCount();
+
+        function updateOriginPixel() {
+            const res = state.mapInfo.resolution;
+            const height = editCanvas.height;
+            state.originPx = (0 - state.origin.x) / res;
+            state.originPy = height - (0 - state.origin.y) / res;
         }
-        
-        async function loadMapPreview() {
-            const response = await fetch(`${API_BASE}/map/preview`);
-            const data = await response.json();
-            
+
+        function updateOriginFromPixel(px, py) {
+            const res = state.mapInfo.resolution;
+            const height = editCanvas.height;
+            state.origin.x = -px * res;
+            state.origin.y = (py - height) * res;
+        }
+
+        function mapPixelToCanvas(x, y) {
+            return rotatePoint(x, y, state.origin.yaw, state.originPx, state.originPy);
+        }
+
+        function canvasToMapPixel(x, y) {
+            return rotatePoint(x, y, -state.origin.yaw, state.originPx, state.originPy);
+        }
+
+        function worldToMapPixel(wx, wy) {
+            const res = state.mapInfo.resolution;
+            const px = (wx - state.origin.x) / res;
+            const py = editCanvas.height - (wy - state.origin.y) / res;
+            return { x: px, y: py };
+        }
+
+        function mapPixelToWorld(px, py) {
+            const res = state.mapInfo.resolution;
+            const wx = state.origin.x + px * res;
+            const wy = state.origin.y + (editCanvas.height - py) * res;
+            return { x: wx, y: wy };
+        }
+
+        function drawAxes(px, py, angle, size, label) {
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            const xEnd = { x: px + size * cos, y: py + size * sin };
+            const yEnd = { x: px - size * sin, y: py + size * cos };
+
+            ctx.save();
+            ctx.lineWidth = 2;
+
+            ctx.strokeStyle = "#ff5252";
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(xEnd.x, xEnd.y);
+            ctx.stroke();
+
+            ctx.strokeStyle = "#00e676";
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(yEnd.x, yEnd.y);
+            ctx.stroke();
+
+            ctx.fillStyle = "#ff5252";
+            ctx.fillRect(xEnd.x - 2, xEnd.y - 2, 4, 4);
+            ctx.fillStyle = "#00e676";
+            ctx.fillRect(yEnd.x - 2, yEnd.y - 2, 4, 4);
+
+            if (label) {
+                ctx.fillStyle = "rgba(0,0,0,0.7)";
+                ctx.strokeStyle = "#ffffff";
+                ctx.lineWidth = 1;
+                const textWidth = ctx.measureText(label).width;
+                ctx.fillRect(px - textWidth / 2 - 4, py - 22, textWidth + 8, 16);
+                ctx.strokeRect(px - textWidth / 2 - 4, py - 22, textWidth + 8, 16);
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 11px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(label, px, py - 10);
+            }
+            ctx.restore();
+        }
+
+        function draw() {
+            if (!state.mapReady) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(state.originPx, state.originPy);
+            ctx.rotate(state.origin.yaw);
+            ctx.translate(-state.originPx, -state.originPy);
+            ctx.drawImage(editCanvas, 0, 0);
+            ctx.restore();
+
+            drawPaths();
+            drawZones();
+
+            const originCanvas = mapPixelToCanvas(state.originPx, state.originPy);
+            drawAxes(originCanvas.x, originCanvas.y, 0, 20, "origin");
+
+            if (state.robotPose) {
+                const mapPixel = worldToMapPixel(state.robotPose.x, state.robotPose.y);
+                const robotCanvas = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                drawAxes(robotCanvas.x, robotCanvas.y, -state.robotPose.theta, 18, "robot");
+            }
+        }
+
+        function drawZones() {
+            ctx.save();
+            ctx.lineWidth = 2;
+            state.zones.forEach(zone => {
+                const mapPixel = worldToMapPixel(zone.x, zone.y);
+                const canvasPos = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                const radius = zone.radius_m ? (zone.radius_m / state.mapInfo.resolution) : 12;
+
+                ctx.beginPath();
+                ctx.fillStyle = "rgba(46, 125, 50, 0.25)";
+                ctx.strokeStyle = "#69f0ae";
+                ctx.arc(canvasPos.x, canvasPos.y, Math.max(10, radius), 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                if (Number.isFinite(zone.yaw)) {
+                    const heading = -zone.yaw;
+                    const hx = canvasPos.x + Math.cos(heading) * (Math.max(10, radius) + 8);
+                    const hy = canvasPos.y + Math.sin(heading) * (Math.max(10, radius) + 8);
+                    ctx.strokeStyle = "#ffee58";
+                    ctx.beginPath();
+                    ctx.moveTo(canvasPos.x, canvasPos.y);
+                    ctx.lineTo(hx, hy);
+                    ctx.stroke();
+                }
+
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 12px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(zone.name || zone.id, canvasPos.x, canvasPos.y - 14);
+            });
+            ctx.restore();
+        }
+
+        function drawPaths() {
+            ctx.save();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#4fc3f7";
+            ctx.setLineDash([6, 4]);
+
+            state.paths.forEach((path, pathId) => {
+                const pts = getRenderablePathPoints(pathId, path);
+                if (!pts || pts.length < 2) return;
+                ctx.beginPath();
+                pts.forEach((pt, idx) => {
+                    const mapPixel = worldToMapPixel(pt.x, pt.y);
+                    const canvasPos = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                    if (idx === 0) {
+                        ctx.moveTo(canvasPos.x, canvasPos.y);
+                    } else {
+                        ctx.lineTo(canvasPos.x, canvasPos.y);
+                    }
+                });
+                ctx.stroke();
+            });
+
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+
+        function getRenderablePathPoints(pathId, path) {
+            const pts = Array.isArray(path.points) ? path.points.map(p => ({ x: p.x, y: p.y })) : [];
+            if (pts.length < 2) return pts;
+
+            if (pathId.includes("__")) {
+                const parts = pathId.split("__");
+                const from = state.zones.get(parts[0]);
+                const to = state.zones.get(parts[1]);
+                if (from && to) {
+                    pts[0] = { x: from.x, y: from.y };
+                    pts[pts.length - 1] = { x: to.x, y: to.y };
+                }
+            }
+            return pts;
+        }
+
+        function paintCircle(x, y, erase = false) {
+            editCtx.save();
+            editCtx.beginPath();
+            editCtx.arc(x, y, state.brush, 0, Math.PI * 2);
+            if (erase) {
+                editCtx.fillStyle = "#ffffff";
+            } else {
+                editCtx.fillStyle = "#000000";
+            }
+            editCtx.fill();
+            editCtx.restore();
+        }
+
+        function translateMapImage(dxMeters, dyMeters) {
+            if (!state.mapInfo) return;
+            const dxPx = dxMeters / state.mapInfo.resolution;
+            const dyPx = -dyMeters / state.mapInfo.resolution;
+            const temp = document.createElement("canvas");
+            temp.width = editCanvas.width;
+            temp.height = editCanvas.height;
+            const tctx = temp.getContext("2d");
+            tctx.fillStyle = "#ffffff";
+            tctx.fillRect(0, 0, temp.width, temp.height);
+            tctx.drawImage(editCanvas, dxPx, dyPx);
+            editCtx.clearRect(0, 0, editCanvas.width, editCanvas.height);
+            editCtx.drawImage(temp, 0, 0);
+        }
+
+        function saveEdits(reason) {
+            if (!state.mapReady) return;
+            if (state.saveTimer) clearTimeout(state.saveTimer);
+
+            state.saveTimer = setTimeout(async () => {
+                try {
+                    updateStatus("Saving...");
+                    const image = editCanvas.toDataURL("image/png");
+                    const origin = [state.origin.x, state.origin.y, state.origin.yaw];
+                    const resp = await fetch(API.overwrite, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ image, origin })
+                    });
+                    const data = await resp.json();
+                    if (data.ok) {
+                        updateStatus(`Saved (${reason})`);
+                    } else {
+                        updateStatus(data.message || "Save failed");
+                    }
+                } catch (err) {
+                    updateStatus("Save error");
+                }
+            }, 250);
+        }
+
+        function getPos(e) {
+            const r = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / r.width;
+            const scaleY = canvas.height / r.height;
+            return {
+                x: (e.clientX - r.left) * scaleX,
+                y: (e.clientY - r.top) * scaleY
+            };
+        }
+
+        canvas.addEventListener("pointerdown", (e) => {
+            if (!state.mapReady) return;
+            canvas.setPointerCapture(e.pointerId);
+            state.pointerDown = true;
+            const p = getPos(e);
+            const mapPos = canvasToMapPixel(p.x, p.y);
+
+            if (state.moveOriginEnabled) {
+                const originCanvas = mapPixelToCanvas(state.originPx, state.originPy);
+                const dx = p.x - originCanvas.x;
+                const dy = p.y - originCanvas.y;
+                if (dx * dx + dy * dy <= 18 * 18) {
+                    state.draggingOrigin = true;
+                    updateStatus("Moving origin");
+                    return;
+                }
+            }
+
+            if (state.tool === "move_zone") {
+                const hit = hitTestZone(p.x, p.y);
+                if (!hit) return;
+                state.draggingZoneId = hit.id;
+                const worldPos = mapPixelToWorld(mapPos.x, mapPos.y);
+                state.dragOffsetMap = {
+                    x: hit.x - worldPos.x,
+                    y: hit.y - worldPos.y
+                };
+                updateStatus(`Moving ${hit.name || hit.id}`);
+                return;
+            }
+
+            if (state.tool === "rotate_zone") {
+                const hit = hitTestZone(p.x, p.y);
+                if (!hit) return;
+                const mapPixel = worldToMapPixel(hit.x, hit.y);
+                const canvasPos = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                state.rotatingZoneId = hit.id;
+                state.rotateStartYaw = hit.yaw || 0;
+                state.rotateStartAngle = Math.atan2(p.y - canvasPos.y, p.x - canvasPos.x);
+                updateStatus(`Rotating ${hit.name || hit.id}`);
+                return;
+            }
+
+            if (state.tool === "add_path") {
+                const hit = hitTestZone(p.x, p.y);
+                if (!hit) return;
+                if (!state.pendingFromZone) {
+                    state.pendingFromZone = hit.id;
+                    updateStatus(`Path from ${hit.name || hit.id}...`);
+                } else if (state.pendingFromZone !== hit.id) {
+                    createPathBetween(state.pendingFromZone, hit.id);
+                    state.pendingFromZone = null;
+                }
+                draw();
+                return;
+            }
+
+            if (state.tool === "add" || state.tool === "erase") {
+                state.strokeSnapshot = editCtx.getImageData(0, 0, editCanvas.width, editCanvas.height);
+                paintCircle(mapPos.x, mapPos.y, state.tool === "erase");
+                draw();
+            }
+        });
+
+        canvas.addEventListener("pointermove", (e) => {
+            if (!state.pointerDown || !state.mapReady) return;
+            const p = getPos(e);
+            const mapPos = canvasToMapPixel(p.x, p.y);
+
+            if (state.moveOriginEnabled && state.draggingOrigin) {
+                state.originPx = mapPos.x;
+                state.originPy = mapPos.y;
+                updateOriginFromPixel(state.originPx, state.originPy);
+                syncOriginInputs();
+                draw();
+                return;
+            }
+
+            if (state.tool === "move_zone" && state.draggingZoneId) {
+                const worldPos = mapPixelToWorld(mapPos.x, mapPos.y);
+                const zone = state.zones.get(state.draggingZoneId);
+                if (zone) {
+                    zone.x = worldPos.x + state.dragOffsetMap.x;
+                    zone.y = worldPos.y + state.dragOffsetMap.y;
+                    draw();
+                }
+                return;
+            }
+
+            if (state.tool === "rotate_zone" && state.rotatingZoneId) {
+                const zone = state.zones.get(state.rotatingZoneId);
+                if (zone) {
+                    const mapPixel = worldToMapPixel(zone.x, zone.y);
+                    const canvasPos = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                    const angle = Math.atan2(p.y - canvasPos.y, p.x - canvasPos.x);
+                    zone.yaw = state.rotateStartYaw + (angle - state.rotateStartAngle);
+                    draw();
+                }
+                return;
+            }
+
+            if (state.tool === "add" || state.tool === "erase") {
+                if (!state.strokeSnapshot) {
+                    state.strokeSnapshot = editCtx.getImageData(0, 0, editCanvas.width, editCanvas.height);
+                }
+                paintCircle(mapPos.x, mapPos.y, state.tool === "erase");
+                draw();
+                return;
+            }
+
+            return;
+        });
+
+        function finishPointer(e) {
+            if (!state.pointerDown) return;
+            state.pointerDown = false;
+            state.dragStart = null;
+            if (e && typeof e.pointerId === "number") {
+                try {
+                    if (canvas.hasPointerCapture(e.pointerId)) {
+                        canvas.releasePointerCapture(e.pointerId);
+                    }
+                } catch (err) {
+                    // ignore
+                }
+            }
+
+            if (state.moveOriginEnabled && state.draggingOrigin) {
+                state.draggingOrigin = false;
+                saveEdits("origin-drag");
+                return;
+            }
+
+            if (state.tool === "move_zone" && state.draggingZoneId) {
+                const zone = state.zones.get(state.draggingZoneId);
+                const movedId = state.draggingZoneId;
+                state.draggingZoneId = null;
+                state.dragOffsetMap = null;
+                if (zone) {
+                    updateZonePose(zone);
+                    updateAttachedPaths(movedId);
+                }
+                state.pointerDown = false;
+                return;
+            }
+
+            if (state.tool === "rotate_zone" && state.rotatingZoneId) {
+                const zone = state.zones.get(state.rotatingZoneId);
+                state.rotatingZoneId = null;
+                if (zone) {
+                    updateZonePose(zone);
+                }
+                state.pointerDown = false;
+                return;
+            }
+
+            if (state.tool === "add" || state.tool === "erase") {
+                if (state.strokeSnapshot) {
+                    state.undoStack.push(state.strokeSnapshot);
+                    state.strokeSnapshot = null;
+                }
+                saveEdits(state.tool);
+            }
+
+        }
+
+        canvas.addEventListener("pointerup", finishPointer);
+        canvas.addEventListener("pointercancel", finishPointer);
+        canvas.addEventListener("pointerleave", finishPointer);
+        window.addEventListener("pointerup", finishPointer);
+
+        async function stopStacks() {
+            try {
+                await fetch(API.stopStack, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mode: "stop" })
+                });
+            } catch (e) {
+                updateStatus("Stack stop failed");
+            }
+        }
+
+        async function loadMap() {
+            const resp = await fetch(API.map);
+            const data = await resp.json();
+            if (!data.image) {
+                updateStatus("Map load failed");
+                return;
+            }
+
+            state.mapInfo = {
+                resolution: data.resolution,
+                origin: data.origin,
+                width: data.width,
+                height: data.height,
+                negate: data.negate || 0
+            };
+
+            state.origin = {
+                x: data.origin[0] || 0,
+                y: data.origin[1] || 0,
+                yaw: data.origin[2] || 0
+            };
+            state.initialOrigin = { ...state.origin };
+
             const img = new Image();
             img.onload = () => {
-                mapImage = img;
                 canvas.width = img.width;
                 canvas.height = img.height;
-                redrawCanvas();
+                editCanvas.width = img.width;
+                editCanvas.height = img.height;
+                editCtx.drawImage(img, 0, 0);
+                updateOriginPixel();
+                state.mapReady = true;
+                syncOriginInputs();
+                updateStatus("Map loaded");
+                draw();
             };
             img.src = `data:image/png;base64,${data.image}`;
         }
-        
-        function redrawCanvas() {
-            if (!mapImage) return;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(mapImage, 0, 0);
-            
-            if (tempDrawing) {
-                drawTempObject(tempDrawing);
-            }
-        }
-        
-        function drawTempObject(obj) {
-            ctx.save();
-            ctx.strokeStyle = obj.color || '#ff0000';
-            ctx.lineWidth = 3;
-            ctx.setLineDash([5, 5]);
-            
-            if (obj.type === 'rectangle') {
-                const width = obj.x2 - obj.x1;
-                const height = obj.y2 - obj.y1;
-                ctx.strokeRect(obj.x1, obj.y1, width, height);
-            } else if (obj.type === 'circle') {
-                const radius = Math.sqrt(Math.pow(obj.x2 - obj.x1, 2) + Math.pow(obj.y2 - obj.y1, 2));
-                ctx.beginPath();
-                ctx.arc(obj.x1, obj.y1, radius, 0, 2 * Math.PI);
-                ctx.stroke();
-            } else if (obj.type === 'polygon' && obj.points && obj.points.length > 0) {
-                ctx.fillStyle = obj.color ? obj.color + '40' : 'rgba(255, 0, 0, 0.2)';
-                ctx.beginPath();
-                ctx.moveTo(obj.points[0].x, obj.points[0].y);
-                for (let i = 1; i < obj.points.length; i++) {
-                    ctx.lineTo(obj.points[i].x, obj.points[i].y);
-                }
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-                
-                obj.points.forEach(p => {
-                    ctx.fillStyle = '#ff0000';
-                    ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
-                });
-            }
-            
-            ctx.restore();
-        }
-        
-        function pixelToWorld(px, py) {
-            const wx = mapInfo.origin[0] + px * mapInfo.resolution;
-            const wy = mapInfo.origin[1] + (mapInfo.height - py) * mapInfo.resolution;
-            return { x: wx, y: wy };
-        }
-        
-        function distance(x1, y1, x2, y2) {
-            return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-        }
-        
-        function setupEventListeners() {
-            document.querySelectorAll('.tool-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    currentTool = btn.dataset.tool;
-                    drawingPoints = [];
-                    tempDrawing = null;
-                    updateInstructions();
-                });
-            });
-            
-            canvas.addEventListener('mousemove', handleMouseMove);
-            canvas.addEventListener('click', handleClick);
-            canvas.addEventListener('contextmenu', handleRightClick);
-        }
-        
-        function handleMouseMove(e) {
-            const rect = canvas.getBoundingClientRect();
-            const px = e.clientX - rect.left;
-            const py = e.clientY - rect.top;
-            const world = pixelToWorld(px, py);
-            
-            document.getElementById('coords-display').textContent = 
-                `X: ${world.x.toFixed(2)}m Y: ${world.y.toFixed(2)}m`;
-            
-            if (drawingPoints.length > 0) {
-                if (currentTool && (currentTool.includes('rect') || currentTool.includes('nogo') || 
-                    currentTool.includes('slow') || currentTool.includes('restricted'))) {
-                    tempDrawing = {
-                        type: 'rectangle',
-                        x1: drawingPoints[0].px,
-                        y1: drawingPoints[0].py,
-                        x2: px,
-                        y2: py,
-                        color: getToolColor()
-                    };
-                } else if (currentTool && currentTool.includes('circle')) {
-                    tempDrawing = {
-                        type: 'circle',
-                        x1: drawingPoints[0].px,
-                        y1: drawingPoints[0].py,
-                        x2: px,
-                        y2: py,
-                        color: getToolColor()
-                    };
-                } else if (currentTool && currentTool.includes('poly')) {
-                    tempDrawing = {
-                        type: 'polygon',
-                        points: [...drawingPoints.map(p => ({ x: p.px, y: p.py })), { x: px, y: py }],
-                        color: getToolColor()
-                    };
-                }
-                redrawCanvas();
-            }
-        }
-        
-        function handleClick(e) {
-            if (!currentTool) {
-                updateStatus('Select a tool first');
-                return;
-            }
-            
-            const rect = canvas.getBoundingClientRect();
-            const px = e.clientX - rect.left;
-            const py = e.clientY - rect.top;
-            const world = pixelToWorld(px, py);
-            
-            if (currentTool === 'measure') {
-                handleMeasure(px, py, world);
-            } else if (currentTool.includes('poly')) {
-                handlePolygonDraw(px, py, world);
-            } else {
-                handleShapeDraw(px, py, world);
-            }
-        }
-        
-        function handleRightClick(e) {
-            e.preventDefault();
-            if (currentTool && currentTool.includes('poly') && drawingPoints.length >= 3) {
-                finishPolygon();
-            }
-        }
-        
-        function handleShapeDraw(px, py, world) {
-            if (drawingPoints.length === 0) {
-                drawingPoints.push({ px, py, world });
-                updateStatus('Click again to finish shape');
-            } else {
-                const start = drawingPoints[0];
-                const layer = getLayerForTool();
-                
-                let obj = {};
-                if (currentTool.includes('rect') || currentTool.includes('nogo') || 
-                    currentTool.includes('slow') || currentTool.includes('restricted')) {
-                    obj = {
-                        type: 'rectangle',
-                        x1: Math.min(start.world.x, world.x),
-                        y1: Math.min(start.world.y, world.y),
-                        x2: Math.max(start.world.x, world.x),
-                        y2: Math.max(start.world.y, world.y)
-                    };
-                    
-                    if (currentTool === 'slow') {
-                        obj.speed_limit = parseFloat(document.getElementById('speed-limit').value);
+
+        async function loadZones() {
+            try {
+                const resp = await fetch(API.zones);
+                const data = await resp.json();
+                const zones = data.zones || {};
+                state.zones.clear();
+                Object.entries(zones).forEach(([name, zone]) => {
+                    let x = Number(zone.x);
+                    let y = Number(zone.y);
+                    let yaw = Number(zone.theta);
+                    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                        if (zone.position) {
+                            x = Number(zone.position.x);
+                            y = Number(zone.position.y);
+                        }
                     }
-                } else if (currentTool.includes('circle')) {
-                    obj = {
-                        type: 'circle',
-                        x: start.world.x,
-                        y: start.world.y,
-                        radius: distance(start.world.x, start.world.y, world.x, world.y)
-                    };
+                    if (!Number.isFinite(yaw) && zone.orientation) {
+                        const q = zone.orientation;
+                        const siny = 2.0 * (q.w * q.z + q.x * q.y);
+                        const cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+                        yaw = Math.atan2(siny, cosy);
+                    }
+                    state.zones.set(name, {
+                        id: name,
+                        name: zone.name || name,
+                        x: Number.isFinite(x) ? x : 0,
+                        y: Number.isFinite(y) ? y : 0,
+                        yaw: Number.isFinite(yaw) ? yaw : 0,
+                        radius_m: Number(zone.radius_m) || 0
+                    });
+                });
+                draw();
+            } catch (e) {
+                updateStatus("Zones load failed");
+            }
+        }
+
+        async function loadPaths() {
+            try {
+                const resp = await fetch(API.paths);
+                const data = await resp.json();
+                const paths = data.paths || {};
+                state.paths.clear();
+                Object.entries(paths).forEach(([name, points]) => {
+                    state.paths.set(name, {
+                        id: name,
+                        points: Array.isArray(points) ? points : []
+                    });
+                });
+                draw();
+            } catch (e) {
+                updateStatus("Paths load failed");
+            }
+        }
+
+        async function loadLayoutInfo() {
+            try {
+                const resp = await fetch(API.layouts);
+                const data = await resp.json();
+                state.currentLayout = data.current || null;
+                setLayoutStatus(state.currentLayout);
+                if (!state.currentLayout) {
+                    updateStatus("No layout loaded - zones/paths disabled");
                 }
-                
-                addLayerObject(layer, obj);
-                drawingPoints = [];
-                tempDrawing = null;
+            } catch (e) {
+                state.currentLayout = null;
+                setLayoutStatus(null);
+                updateStatus("Layout info unavailable");
             }
         }
-        
-        function handlePolygonDraw(px, py, world) {
-            drawingPoints.push({ px, py, world });
-            updateStatus(`Polygon: ${drawingPoints.length} points (right-click to finish)`);
-        }
-        
-        async function finishPolygon() {
-            if (drawingPoints.length < 3) return;
-            
-            const layer = getLayerForTool();
-            const obj = {
-                type: 'polygon',
-                points: drawingPoints.map(p => ({ x: p.world.x, y: p.world.y }))
-            };
-            
-            await addLayerObject(layer, obj);
-            drawingPoints = [];
-            tempDrawing = null;
-        }
-        
-        function handleMeasure(px, py, world) {
-            if (drawingPoints.length === 0) {
-                drawingPoints.push({ px, py, world });
-                updateStatus('Click second point');
-            } else {
-                const start = drawingPoints[0];
-                const dist = distance(start.world.x, start.world.y, world.x, world.y);
-                const resultDiv = document.getElementById('measurement-result');
-                resultDiv.textContent = `Distance: ${dist.toFixed(3)}m`;
-                resultDiv.style.display = 'block';
-                drawingPoints = [];
-                updateStatus('Measurement complete');
-            }
-        }
-        
-        function getLayerForTool() {
-            if (currentTool.includes('obstacle')) return 'obstacles';
-            if (currentTool.includes('nogo')) return 'no_go_zones';
-            if (currentTool.includes('slow')) return 'slow_zones';
-            if (currentTool.includes('restricted')) return 'restricted';
-            return 'obstacles';
-        }
-        
-        function getToolColor() {
-            if (currentTool.includes('obstacle')) return '#000000';
-            if (currentTool.includes('nogo')) return '#ff0000';
-            if (currentTool.includes('slow')) return '#ffff00';
-            if (currentTool.includes('restricted')) return '#ffa500';
-            return '#000000';
-        }
-        
-        async function addLayerObject(layer, obj) {
-            const response = await fetch(`${API_BASE}/layer/add`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ layer, object: obj })
-            });
-            
-            if (response.ok) {
-                await loadLayers();
-                await loadMapPreview();
-                updateObjectCount();
-                updateStatus('Object added');
-            }
-        }
-        
-        async function clearLayer(layer) {
-            if (!confirm(`Clear all ${layer.replace('_', ' ')}?`)) return;
-            
-            const response = await fetch(`${API_BASE}/layer/clear`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ layer })
-            });
-            
-            if (response.ok) {
-                await loadLayers();
-                await loadMapPreview();
-                updateStatus(`Cleared ${layer}`);
-            }
-        }
-        
-        async function clearAllLayers() {
-            if (!confirm('Clear ALL layers?')) return;
-            
-            for (const layer of Object.keys(layers)) {
-                await clearLayer(layer);
-            }
-        }
-        
-        async function exportMap() {
-            const defaultName = 'edited_map_' + new Date().toISOString().slice(0,10).replace(/-/g, '');
-            const baseName = prompt('Enter map name (without extension):', defaultName);
-            if (!baseName) return;
 
-            updateStatus('Exporting...');
-            const pgmFilename = baseName.toLowerCase().endsWith('.pgm') ? baseName : `${baseName}.pgm`;
+        async function updateZonePose(zone) {
+            try {
+                const resp = await fetch(API.zoneUpdate, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        name: zone.id,
+                        x: zone.x,
+                        y: zone.y,
+                        theta: zone.yaw || 0
+                    })
+                });
+                const data = await resp.json();
+                if (data.ok === false) {
+                    updateStatus(data.message || "Zone update failed");
+                } else {
+                    updateStatus(`Zone ${zone.name || zone.id} updated`);
+                }
+            } catch (e) {
+                updateStatus("Zone update failed");
+            }
+        }
 
-            const response = await fetch(`${API_BASE}/map/export`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: pgmFilename })
+        async function savePathToRos(pathId, points) {
+            try {
+                const resp = await fetch(API.pathSave, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        name: pathId,
+                        path: points
+                    })
+                });
+                const data = await resp.json();
+                if (data.ok === false) {
+                    updateStatus(data.message || "Path save failed");
+                } else {
+                    updateStatus(`Path ${pathId} saved`);
+                }
+            } catch (e) {
+                updateStatus("Path save failed");
+            }
+        }
+
+        function updateAttachedPaths(zoneId) {
+            state.paths.forEach((path, pathId) => {
+                const parts = pathId.split("__");
+                if (parts.length !== 2) return;
+                if (parts[0] !== zoneId && parts[1] !== zoneId) return;
+                const pts = getRenderablePathPoints(pathId, path);
+                if (pts && pts.length >= 2) {
+                    path.points = pts.map(p => ({ x: p.x, y: p.y }));
+                    savePathToRos(pathId, path.points);
+                }
             });
-            
-            if (response.ok) {
-                const result = await response.json();
-                const downloadPgm = result.download || `/api/map/download/${pgmFilename}`;
-                const downloadYaml = downloadPgm.replace(/\.pgm$/, '.yaml');
-                
-                // Download PGM
-                const aPgm = document.createElement('a');
-                aPgm.href = downloadPgm;
-                aPgm.download = pgmFilename;
-                document.body.appendChild(aPgm);
-                aPgm.click();
-                document.body.removeChild(aPgm);
-                
-                // Download YAML after a short delay
-                setTimeout(() => {
-                    const aYaml = document.createElement('a');
-                    aYaml.href = downloadYaml;
-                    aYaml.download = pgmFilename.replace(/\.pgm$/, '.yaml');
-                    document.body.appendChild(aYaml);
-                    aYaml.click();
-                    document.body.removeChild(aYaml);
-                }, 500);
-                
-                updateStatus('Export complete - downloading files...');
-                alert(`✓ Map exported!\n\nDownloading:\n• ${pgmFilename}\n• ${pgmFilename.replace(/\\.pgm$/, '.yaml')}\n\nYou can now use this map in Nav2!`);
-            } else {
-                updateStatus('Export failed');
-                alert('Failed to export map');
-            }
         }
-        
-        async function saveToCurrentMap() {
-            if (!confirm('⚠️ SAVE TO NAVIGATION MAP\n\n' +
-                '✓ Obstacles → Baked into map PGM (permanent walls)\n' +
-                '✓ No-Go Zones → Exported as Nav2 keepout filters\n' +
-                '✓ Restricted Areas → Exported as Nav2 keepout filters\n' +
-                '✓ Slow Zones → Exported as speed limit zones\n\n' +
-                'A backup will be created.\n' +
-                'You must RESTART Nav2 for changes to take effect.\n\n' +
-                'Continue?')) {
-                return;
-            }
-            
-            updateStatus('Saving to current map...');
-            const response = await fetch(`${API_BASE}/map/save_current`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+
+        function hitTestZone(px, py, pickRadius = 18) {
+            let best = null;
+            let bestD2 = Infinity;
+            state.zones.forEach(zone => {
+                const mapPixel = worldToMapPixel(zone.x, zone.y);
+                const canvasPos = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                const dx = px - canvasPos.x;
+                const dy = py - canvasPos.y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < bestD2 && d2 < pickRadius * pickRadius) {
+                    bestD2 = d2;
+                    best = zone;
+                }
             });
-            
-            if (response.ok) {
-                const result = await response.json();
-                alert(`✓ MAP SAVED!\n\n` +
-                    `${result.message}\n\n` +
-                    `Map file: ${result.map_path}\n` +
-                    `Keepout zones: /maps/keepout_zones.yaml\n` +
-                    `Speed zones: /maps/speed_zones.yaml\n\n` +
-                    `⚠️ RESTART Nav2 to load the updated map!\n\n` +
-                    `The robot will now avoid no-go zones and\n` +
-                    `respect speed limits in slow zones.`);
-                updateStatus('Saved to current map');
-            } else {
-                alert('❌ Failed to save map');
-                updateStatus('Save failed');
+            return best;
+        }
+
+        function createPathBetween(fromId, toId) {
+            const from = state.zones.get(fromId);
+            const to = state.zones.get(toId);
+            if (!from || !to) return;
+
+            const pathId = `${fromId}__${toId}`;
+            const points = [
+                { x: from.x, y: from.y },
+                { x: to.x, y: to.y }
+            ];
+            state.paths.set(pathId, { id: pathId, points });
+            savePathToRos(pathId, points);
+            updateStatus(`Path ${fromId} -> ${toId}`);
+            draw();
+        }
+
+        async function refreshRobotPose() {
+            try {
+                const resp = await fetch(API.robotPose);
+                const data = await resp.json();
+                if (data && data.pose) {
+                    state.robotPose = data.pose;
+                    draw();
+                }
+            } catch (e) {
+                // ignore
             }
         }
-        
-        async function reloadMap() {
-            updateStatus('Reloading map...');
-            const response = await fetch(`${API_BASE}/map/reload`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            
-            if (response.ok) {
-                await loadMapPreview();
-                updateStatus('Map reloaded');
-            }
+
+        async function init() {
+            await stopStacks();
+            await loadMap();
+            await loadLayoutInfo();
+            await loadZones();
+            await loadPaths();
+            setTool("add");
+            setInterval(refreshRobotPose, 1000);
+            setInterval(() => {
+                loadLayoutInfo();
+                loadZones();
+                loadPaths();
+            }, 5000);
         }
-        
-        function updateInstructions() {
-            const messages = {
-                'obstacle-rect': 'Click two points to draw obstacle rectangle',
-                'obstacle-circle': 'Click center, then radius point',
-                'obstacle-poly': 'Click points, right-click to finish',
-                'nogo': 'Click two corners for no-go zone',
-                'slow': 'Click two corners for slow zone',
-                'restricted': 'Click two corners for restricted area',
-                'measure': 'Click two points to measure'
-            };
-            
-            document.getElementById('instructions').textContent = 
-                messages[currentTool] || 'Select a tool';
-        }
-        
-        function updateStatus(text) {
-            document.getElementById('status-text').textContent = text;
-        }
-        
-        function updateObjectCount() {
-            const total = Object.values(layers).reduce((sum, arr) => sum + arr.length, 0);
-            document.getElementById('object-count').textContent = `Objects: ${total}`;
-        }
-        
+
         init();
     </script>
 </body>

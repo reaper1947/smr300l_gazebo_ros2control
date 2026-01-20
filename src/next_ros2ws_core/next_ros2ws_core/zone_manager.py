@@ -5,7 +5,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 from next_ros2ws_interfaces.srv import (
     SaveZone, DeleteZone, UpdateZoneParams, ReorderZones,
-    SavePath, DeletePath, SaveLayout, LoadLayout, DeleteLayout,
+    SavePath, DeletePath, SaveLayout, LoadLayout, DeleteLayout, GetLayouts,
     SetMaxSpeed, SetControlMode, SetSafetyOverride, SetEStop
 )
 from next_ros2ws_interfaces.action import GoToZone as GoToZoneAction, FollowPath as FollowPathAction
@@ -14,6 +14,7 @@ from action_msgs.msg import GoalStatus
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 import yaml
 import os
+import json
 
 
 class ZoneManager(Node):
@@ -71,6 +72,12 @@ class ZoneManager(Node):
             '/delete_layout',
             self.delete_layout_callback
         )
+
+        self.get_layouts_srv = self.create_service(
+            GetLayouts,
+            '/get_layouts',
+            self.get_layouts_callback
+        )
         
         # Control services
         self.set_max_speed_srv = self.create_service(
@@ -104,6 +111,7 @@ class ZoneManager(Node):
         self.estop_active = False
         self.layouts_file = os.path.expanduser('~/layouts.yaml')
         self.paths_file = os.path.expanduser('~/paths.yaml')
+        self.current_layout = None
         
         # Action client for Nav2
         self.nav_client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
@@ -485,8 +493,8 @@ class ZoneManager(Node):
                 'paths': paths
             }
             
-            with open(self.layouts_file, 'w') as f:
-                yaml.dump({'layouts': layouts}, f, default_flow_style=False)
+            self.current_layout = request.name
+            self._write_layouts_file(layouts, current=self.current_layout)
             
             response.ok = True
             response.message = f'Layout "{request.name}" saved'
@@ -509,6 +517,8 @@ class ZoneManager(Node):
             layout = layouts[request.name]
             self.zones = {"zones": layout.get("zones", {})}
             self.save_zones()
+            self.current_layout = request.name
+            self._write_layouts_file(layouts, current=self.current_layout)
             
             response.ok = True
             response.message = f'Layout "{request.name}" loaded'
@@ -528,8 +538,10 @@ class ZoneManager(Node):
                 return response
             
             del layouts[request.name]
-            with open(self.layouts_file, 'w') as f:
-                yaml.dump({'layouts': layouts}, f, default_flow_style=False)
+            current = None if self.current_layout == request.name else self.current_layout
+            if self.current_layout == request.name:
+                self.current_layout = None
+            self._write_layouts_file(layouts, current=current)
             
             response.ok = True
             response.message = f'Layout "{request.name}" deleted'
@@ -537,6 +549,23 @@ class ZoneManager(Node):
         except Exception as e:
             response.ok = False
             response.message = f'Failed to delete layout: {str(e)}'
+        return response
+
+    def get_layouts_callback(self, request, response):
+        """Return layouts list and current layout over ROS service."""
+        try:
+            data = self._load_layouts_file()
+            layouts = data.get('layouts', {})
+            current = self.current_layout or data.get('current') or ''
+            response.ok = True
+            response.message = 'ok'
+            response.current = current
+            response.layouts_json = json.dumps(layouts)
+        except Exception as e:
+            response.ok = False
+            response.message = str(e)
+            response.current = ''
+            response.layouts_json = '{}'
         return response
     
     def set_max_speed_callback(self, request, response):
@@ -586,15 +615,27 @@ class ZoneManager(Node):
     
     def _load_layouts(self):
         """Load layouts from file"""
+        data = self._load_layouts_file()
+        return data.get('layouts', {})
+
+    def _load_layouts_file(self):
+        """Load raw layouts file data (including current)."""
         if os.path.exists(self.layouts_file):
             try:
                 with open(self.layouts_file, 'r') as f:
-                    data = yaml.safe_load(f) or {}
-                return data.get('layouts', {})
+                    return yaml.safe_load(f) or {}
             except Exception as e:
                 self.get_logger().error(f'Failed to load layouts: {e}')
                 return {}
         return {}
+
+    def _write_layouts_file(self, layouts, current=None):
+        """Write layouts file with optional current layout name."""
+        payload = {'layouts': layouts}
+        if current:
+            payload['current'] = current
+        with open(self.layouts_file, 'w') as f:
+            yaml.dump(payload, f, default_flow_style=False)
     
     def _load_paths(self):
         """Load paths from file"""

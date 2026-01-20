@@ -30,6 +30,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SaveLayout.srv"
   "srv/LoadLayout.srv"
   "srv/DeleteLayout.srv"
+  "srv/GetLayouts.srv"
   "srv/SetMaxSpeed.srv"
   "srv/SetControlMode.srv"
   "srv/SetSafetyOverride.srv"

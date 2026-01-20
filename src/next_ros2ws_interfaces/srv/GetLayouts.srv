@@ -1,0 +1,5 @@
+---
+bool ok
+string message
+string current
+string layouts_json

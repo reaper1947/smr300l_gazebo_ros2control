@@ -14,14 +14,14 @@ from rclpy.duration import Duration
 from rclpy.time import Time
 from next_ros2ws_interfaces.srv import (
     SaveZone, DeleteZone, UpdateZoneParams, ReorderZones,
-    SavePath, DeletePath, SaveLayout, LoadLayout, DeleteLayout,
+    SavePath, DeletePath, SaveLayout, LoadLayout, DeleteLayout, GetLayouts,
     SetMaxSpeed, SetControlMode, SetSafetyOverride, SetEStop,
     UploadMap, SetActiveMap, GetActiveMap
 )
 from next_ros2ws_interfaces.action import GoToZone as GoToZoneAction, FollowPath as FollowPathAction
 from nav2_msgs.action import NavigateToPose
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist, TransformStamped, PointStamped
-from nav_msgs.msg import Path
+from nav_msgs.msg import Path, Odometry
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 from std_srvs.srv import Trigger, SetBool
@@ -75,6 +75,10 @@ class ZoneWebServer(Node):
             self._map_callback,
             map_qos
         )
+        self.latest_odom = None
+        self.create_subscription(Odometry, '/odom', self._odom_callback, 10)
+        self._layouts_mtime = None
+        self.create_timer(5.0, self._poll_layouts_file)
         # Queue for marshaling Flask→ROS calls onto the executor thread(s)
         # Use a steady clock so this timer still runs when use_sim_time is true
         # and /clock is not yet publishing.
@@ -99,6 +103,7 @@ class ZoneWebServer(Node):
         self.save_layout_client = self.create_client(SaveLayout, '/save_layout')
         self.load_layout_client = self.create_client(LoadLayout, '/load_layout')
         self.delete_layout_client = self.create_client(DeleteLayout, '/delete_layout')
+        self.get_layouts_srv = self.create_service(GetLayouts, '/get_layouts', self.get_layouts_callback)
         self.set_max_speed_client = self.create_client(SetMaxSpeed, '/set_max_speed')
         self.set_control_mode_client = self.create_client(SetControlMode, '/set_control_mode')
         self.set_safety_override_client = self.create_client(SetSafetyOverride, '/set_safety_override')
@@ -290,6 +295,9 @@ class ZoneWebServer(Node):
 
     def _map_callback(self, msg):
         self.latest_map_msg = msg
+
+    def _odom_callback(self, msg):
+        self.latest_odom = msg
 
     def _lookup_tf_pose(self):
         """Get robot pose from TF (map -> base_link/base_footprint)."""
@@ -709,15 +717,48 @@ class ZoneWebServer(Node):
     
     def load_layouts(self):
         """Load all saved layouts from YAML file"""
+        data = self._load_layouts_file()
+        return data.get('layouts', {})
+
+    def _load_layouts_file(self):
+        """Load raw layouts file data (including current layout)."""
         if os.path.exists(self.layouts_file):
             try:
                 with open(self.layouts_file, 'r') as f:
-                    data = yaml.safe_load(f) or {}
-                return data.get('layouts', {})
+                    return yaml.safe_load(f) or {}
             except Exception as e:
                 self.get_logger().error(f'Failed to load layouts: {e}')
                 return {}
         return {}
+
+    def _write_layouts_file(self, layouts, current=None):
+        """Write layouts file with optional current layout name."""
+        payload = {'layouts': layouts}
+        if current:
+            payload['current'] = current
+        with open(self.layouts_file, 'w') as f:
+            yaml.dump(payload, f, default_flow_style=False)
+        return {}
+
+    def persist_current_layout(self):
+        """Update the current layout with latest zones/paths from disk."""
+        if not self.current_layout:
+            return False
+
+        layouts = self.load_layouts()
+        if self.current_layout not in layouts:
+            return False
+
+        try:
+            layout = layouts[self.current_layout]
+            layout['zones'] = self.load_zones()
+            layout['paths'] = self.load_paths()
+            layouts[self.current_layout] = layout
+            self._write_layouts_file(layouts, current=self.current_layout)
+            return True
+        except Exception as e:
+            self.get_logger().error(f'Failed to persist layout "{self.current_layout}": {e}')
+            return False
     
     def save_layout(self, name, description=''):
         """Save current configuration as a layout"""
@@ -740,8 +781,7 @@ class ZoneWebServer(Node):
             }
             
             # Save to file
-            with open(self.layouts_file, 'w') as f:
-                yaml.dump({'layouts': layouts}, f, default_flow_style=False)
+            self._write_layouts_file(layouts, current=name)
             
             self.current_layout = name
             self.get_logger().info(f'Layout "{name}" saved with {len(zones)} zones and {len(paths)} paths')
@@ -786,6 +826,7 @@ class ZoneWebServer(Node):
             self._set_filters_only(filters)
             
             self.current_layout = name
+            self._write_layouts_file(layouts, current=name)
             zones_count = len(layout.get('zones', {}))
             paths_count = len(layout.get('paths', {}))
             
@@ -807,8 +848,8 @@ class ZoneWebServer(Node):
             layouts = self.load_layouts()
             if name in layouts:
                 del layouts[name]
-                with open(self.layouts_file, 'w') as f:
-                    yaml.dump({'layouts': layouts}, f, default_flow_style=False)
+                current = None if self.current_layout == name else self.current_layout
+                self._write_layouts_file(layouts, current=current)
                 if self.current_layout == name:
                     self.current_layout = None
                 self.get_logger().info(f'Layout "{name}" deleted')
@@ -821,15 +862,47 @@ class ZoneWebServer(Node):
     
     def get_layout_info(self):
         """Get information about current layout and available layouts"""
-        layouts = self.load_layouts()
+        data = self._load_layouts_file()
+        layouts = data.get('layouts', {})
+        current = self.current_layout or data.get('current')
+        if current and self.current_layout != current:
+            self.current_layout = current
         return {
-            'current': self.current_layout,
+            'current': current,
             'layouts': {name: {'description': data.get('description', ''), 
                                'zones_count': len(data.get('zones', {})),
                                'paths_count': len(data.get('paths', {})),
                                'created': data.get('created', 0)}
                         for name, data in layouts.items()}
         }
+
+    def get_layouts_callback(self, request, response):
+        """Return layout info over ROS service as JSON."""
+        try:
+            info = self.get_layout_info()
+            response.ok = True
+            response.message = 'ok'
+            response.current = info.get('current') or ''
+            response.layouts_json = json.dumps(info.get('layouts', {}))
+        except Exception as e:
+            response.ok = False
+            response.message = str(e)
+            response.current = ''
+            response.layouts_json = '{}'
+        return response
+
+    def _poll_layouts_file(self):
+        """Track current layout changes on disk."""
+        try:
+            if not os.path.exists(self.layouts_file):
+                return
+            mtime = os.path.getmtime(self.layouts_file)
+            if self._layouts_mtime is None or mtime != self._layouts_mtime:
+                self._layouts_mtime = mtime
+                info = self.get_layout_info()
+                self.current_layout = info.get('current')
+        except Exception as e:
+            self.get_logger().debug(f'Layouts poll failed: {e}')
     
     def save_mission_state(self, mission_type, mission_data, progress, interrupted_by=None):
         """Save current mission state for potential resume"""
@@ -1655,6 +1728,37 @@ class ZoneWebServer(Node):
         except Exception as e:
             self.get_logger().error(f'Failed to update zone params: {e}')
             return {'ok': False, 'message': f'Error updating zone: {str(e)}'}
+
+    def update_zone_position_local(self, name, x, y, theta):
+        """Update zone position/orientation directly in zones.yaml."""
+        try:
+            zones = self.load_zones()
+            zone = zones.get(name, {})
+            zone.setdefault('position', {})
+            zone.setdefault('orientation', {})
+            zone['frame_id'] = zone.get('frame_id', 'map')
+            zone['position']['x'] = float(x)
+            zone['position']['y'] = float(y)
+            zone['position']['z'] = float(zone['position'].get('z', 0.0))
+            zone['orientation']['x'] = 0.0
+            zone['orientation']['y'] = 0.0
+            zone['orientation']['z'] = math.sin(float(theta) / 2.0)
+            zone['orientation']['w'] = math.cos(float(theta) / 2.0)
+            zones[name] = zone
+            # If a layout is active, update its zones too and keep zones.yaml in sync
+            if self.current_layout:
+                layouts = self.load_layouts()
+                if self.current_layout in layouts:
+                    layout = layouts[self.current_layout]
+                    layout['zones'] = zones
+                    layouts[self.current_layout] = layout
+                    self._write_layouts_file(layouts, current=self.current_layout)
+            with open(self.zones_file, 'w') as f:
+                yaml.dump({'zones': zones}, f, default_flow_style=False)
+            return {'ok': True, 'message': f'Zone "{name}" updated'}
+        except Exception as e:
+            self.get_logger().error(f'Failed to update zone position: {e}')
+            return {'ok': False, 'message': f'Failed to update zone position: {str(e)}'}
     
     def start_sequence(self, zone_names):
         """Start navigating through zones in sequence"""
@@ -1969,7 +2073,8 @@ def get_map():
         'width': map_img['width'],
         'height': map_img['height'],
         'resolution': ros_node.map_info.get('resolution', 0.05),
-        'origin': ros_node.map_info.get('origin', [0, 0, 0])
+        'origin': ros_node.map_info.get('origin', [0, 0, 0]),
+        'negate': ros_node.map_info.get('negate', 0)
     })
 
 
@@ -2046,6 +2151,26 @@ def get_scan():
     return jsonify({'scan': ros_node.laser_scan})
 
 
+@app.route('/api/odom')
+def get_odom():
+    """Get current odometry velocity"""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+
+    msg = ros_node.latest_odom
+    if msg is None:
+        return jsonify({'error': 'No odom data'}), 500
+
+    lin = msg.twist.twist.linear
+    ang = msg.twist.twist.angular
+    speed = math.hypot(lin.x, lin.y)
+    return jsonify({
+        'linear': {'x': lin.x, 'y': lin.y, 'z': lin.z},
+        'angular': {'x': ang.x, 'y': ang.y, 'z': ang.z},
+        'speed': speed
+    })
+
+
 @app.route('/api/zones/save', methods=['POST'])
 def save_zone():
     """Save a new zone"""
@@ -2077,7 +2202,9 @@ def save_zone():
     
     # Direct call - save_zone uses async service call pattern (non-blocking)
     result = ros_node.save_zone(name, x, y, theta, zone_type, speed, action, charge_duration)
-    
+    if result.get('ok'):
+        ros_node.persist_current_layout()
+
     return jsonify(result)
 
 
@@ -2112,6 +2239,8 @@ def delete_zone():
     
     # Call DeleteZone service
     result = ros_node.delete_zone(name)
+    if result.get('ok'):
+        ros_node.persist_current_layout()
     return jsonify(result)
 
 
@@ -2132,6 +2261,8 @@ def reorder_zones():
     
     # Call ReorderZones service
     result = ros_node.reorder_zones_service(zone_names)
+    if result.get('ok'):
+        ros_node.persist_current_layout()
     return jsonify(result)
 
 
@@ -2150,9 +2281,10 @@ def update_zone():
     if not name or x is None or y is None:
         return jsonify({'error': 'Name, x, and y are required'}), 400
     
-    # Save updated zone position
-    # Direct call - save_zone uses async service call pattern (non-blocking)
-    result = ros_node.save_zone(name, x, y, theta)
+    # Update zones.yaml directly to avoid /goal_pose timing issues
+    result = ros_node.update_zone_position_local(name, x, y, theta)
+    if result.get('ok'):
+        ros_node.persist_current_layout()
     return jsonify(result)
 
 
@@ -2238,6 +2370,8 @@ def save_path():
         return jsonify({'error': 'Path must have at least 2 points'}), 400
     
     result = ros_node.save_path(name, path_points)
+    if result.get('ok'):
+        ros_node.persist_current_layout()
     return jsonify(result)
 
 
@@ -2268,6 +2402,8 @@ def delete_path(path_name):
         return jsonify({'error': 'ROS node not initialized'}), 500
     
     result = ros_node.delete_path(path_name)
+    if result.get('ok'):
+        ros_node.persist_current_layout()
     return jsonify(result)
 
 
@@ -3015,6 +3151,56 @@ def export_editor_map():
     success = ros_node.export_edited_map(output_path)
     filename = os.path.basename(output_path)
     return jsonify({'ok': success, 'path': output_path, 'download': f'/api/map/download/{filename}'})
+
+
+@app.route('/api/editor/map/overwrite', methods=['POST'])
+def overwrite_editor_map():
+    """Overwrite the current map image and update origin/yaw."""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+
+    data = request.json or {}
+    image_b64 = data.get('image')
+    origin = data.get('origin')
+
+    if not image_b64 or not isinstance(origin, list) or len(origin) < 2:
+        return jsonify({'ok': False, 'message': 'Missing image or origin'}), 400
+
+    try:
+        if image_b64.startswith('data:image'):
+            image_b64 = image_b64.split(',', 1)[-1]
+
+        img_bytes = base64.b64decode(image_b64)
+        img = Image.open(io.BytesIO(img_bytes)).convert('L')
+
+        # Undo display negation if the map uses negate=1
+        if ros_node.map_info.get('negate', 0) == 1:
+            img = Image.eval(img, lambda x: 255 - x)
+
+        img_path = ros_node.map_info.get('image_path')
+        if not img_path:
+            return jsonify({'ok': False, 'message': 'Map image path not available'}), 500
+
+        img.save(img_path)
+
+        # Update map YAML origin
+        yaw = float(origin[2]) if len(origin) > 2 else 0.0
+        origin_list = [float(origin[0]), float(origin[1]), yaw]
+
+        map_yaml_path = ros_node.map_path
+        if map_yaml_path and os.path.exists(map_yaml_path):
+            with open(map_yaml_path, 'r') as f:
+                map_yaml = yaml.safe_load(f) or {}
+            map_yaml['origin'] = origin_list
+            with open(map_yaml_path, 'w') as f:
+                yaml.safe_dump(map_yaml, f, default_flow_style=False)
+
+        ros_node.map_info['origin'] = origin_list
+        ros_node._load_map_image()
+
+        return jsonify({'ok': True, 'message': 'Map updated'})
+    except Exception as e:
+        return jsonify({'ok': False, 'message': str(e)}), 500
 
 
 @app.route('/api/editor/map/save_current', methods=['POST'])

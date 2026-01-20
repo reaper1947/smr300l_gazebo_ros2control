@@ -94,7 +94,8 @@
 
         #container {
             display: flex;
-            height: 100%;
+            height: calc(100vh - 55px);
+            min-height: 0;
         }
 
         #sidebar {
@@ -221,6 +222,113 @@
             box-shadow: var(--shadow-sm);
         }
 
+        .log-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--border-primary);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 12px;
+            cursor: pointer;
+            margin-bottom: 12px;
+        }
+
+        .log-indicator.is-error {
+            border-color: var(--accent-red);
+            color: var(--accent-red);
+        }
+
+        .log-badge {
+            min-width: 20px;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            font-size: 11px;
+            text-align: center;
+        }
+
+        .log-panel {
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            border: 1px solid var(--border-primary);
+            padding: 12px;
+            margin-bottom: 12px;
+            display: none;
+        }
+
+        .log-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .log-list {
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            padding: 6px 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-entry.error {
+            color: #ffb3b3;
+        }
+
+        .log-entry.success {
+            color: #b7f5c6;
+        }
+
+        .log-entry.info {
+            color: #cfd8dc;
+        }
+
+        .dropdown-card {
+            padding: 0;
+        }
+
+        .dropdown-card summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .dropdown-card summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .dropdown-card summary::after {
+            content: "▾";
+            color: var(--text-muted);
+            transition: transform 0.2s ease;
+        }
+
+        .dropdown-card[open] summary::after {
+            transform: rotate(180deg);
+        }
+
+        .dropdown-content {
+            padding: 0 16px 16px 16px;
+        }
+
         .card-header {
             display: flex;
             justify-content: space-between;
@@ -241,7 +349,7 @@
             background: var(--bg-primary);
             overflow: hidden;
             min-width: 0;
-            min-height: 0;
+            min-height: 200px;
         }
 
         h1 {
@@ -1291,7 +1399,7 @@
     <!-- Tab Navigation -->
     <div class="tab-navigation">
         <button class="tab-button active" onclick="switchTab('navigator')">
-            🗺️ Zone Navigator
+            🗺️ Home
         </button>
         <button class="tab-button" onclick="switchTab('editor')">
             🛠️ Map Editor
@@ -1306,7 +1414,7 @@
         <div id="container">
             <div id="sidebar">
                 <div class="sidebar-header">
-                    <h1>Zone Navigator</h1>
+                    <h1>NEXT ROS2</h1>
                 </div>
                 <div class="card">
                     <div class="card-header">
@@ -1333,6 +1441,19 @@
                 </div>
 
                 <div class="sidebar-content">
+                    <div class="log-indicator" id="log-indicator" onclick="toggleLogPanel()">
+                        🧾 Logs
+                        <span class="log-badge" id="log-badge">0</span>
+                    </div>
+                    <div class="log-panel" id="log-panel">
+                        <div class="log-panel-header">
+                            <span>Recent messages</span>
+                            <button class="btn-delete" style="padding: 4px 8px;" onclick="clearLogs()">Clear</button>
+                        </div>
+                        <div class="log-list" id="log-list">
+                            <div class="log-entry info">No messages yet.</div>
+                        </div>
+                    </div>
                     <!-- MANUAL MODE BUTTON -->
                     <button class="manual-mode-btn" id="manual-mode-btn" onclick="toggleManualMode()"
                         title="Toggle Manual Control (M)">
@@ -1351,142 +1472,139 @@
                         </div>
                     </div>
 
-                    <div class="card">
-                        <h2>Configuration Layouts</h2>
-                        <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-                            <button class="btn-save" style="flex: 1; padding: 8px; background: #4CAF50;"
-                                onclick="saveNewLayout()">
-                                💾 Save Layout
-                            </button>
-                            <button class="btn-save" style="flex: 1; padding: 8px; background: #2196F3;"
-                                onclick="loadLayoutsUI()">
-                                🔄 Refresh
-                            </button>
-                        </div>
-                        <div id="current-layout-display"
-                            style="padding: 8px; margin-bottom: 10px; background: rgba(76, 175, 80, 0.2); border-radius: 4px; font-size: 12px; display: none;">
-                            <div style="color: #4CAF50; font-weight: bold;">Active Layout:</div>
-                            <div id="current-layout-name" style="color: #fff; margin-top: 2px;"></div>
-                        </div>
-                        <div id="layouts-list" style="max-height: 200px; overflow-y: auto;">
-                            <div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">
-                                No saved layouts
+                    <details class="card dropdown-card" id="layouts-card" open>
+                        <summary>Configuration Layouts</summary>
+                        <div class="dropdown-content">
+                            <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                                <button class="btn-save" style="flex: 1; padding: 8px; background: #4CAF50;"
+                                    onclick="saveNewLayout()">
+                                    💾 Save Layout
+                                </button>
+                                <button class="btn-save" style="flex: 1; padding: 8px; background: #2196F3;"
+                                    onclick="loadLayoutsUI()">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+                            <div id="current-layout-display"
+                                style="padding: 8px; margin-bottom: 10px; background: rgba(76, 175, 80, 0.2); border-radius: 4px; font-size: 12px; display: none;">
+                                <div style="color: #4CAF50; font-weight: bold;">Active Layout:</div>
+                                <div id="current-layout-name" style="color: #fff; margin-top: 2px;"></div>
+                            </div>
+                            <div id="layouts-list" style="max-height: 200px; overflow-y: auto;">
+                                <div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">
+                                    No saved layouts
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </details>
 
-                    <div class="card tool-panel" id="filters-card">
-                        <div class="card-header">
-                            <h3 class="card-title">Filters</h3>
-                        </div>
-                        <div class="filter-tools">
-                            <div class="filter-row">
-                                <button class="filter-btn active" id="filter-layer-no-go"
-                                    onclick="setFilterLayer('no_go_zones')">
-                                    Keepout
-                                </button>
-                                <button class="filter-btn" id="filter-layer-restricted"
-                                    onclick="setFilterLayer('restricted')">
-                                    Restricted
-                                </button>
-                                <button class="filter-btn" id="filter-layer-slow"
-                                    onclick="setFilterLayer('slow_zones')">
-                                    Slow
-                                </button>
+                    <details class="card tool-panel dropdown-card" id="filters-card" open>
+                        <summary>Filters</summary>
+                        <div class="dropdown-content">
+                            <div class="filter-tools">
+                                <div class="filter-row">
+                                    <button class="filter-btn active" id="filter-layer-no-go"
+                                        onclick="setFilterLayer('no_go_zones')">
+                                        Keepout
+                                    </button>
+                                    <button class="filter-btn" id="filter-layer-speed"
+                                        onclick="setFilterLayer('slow_zones')">
+                                        Speed
+                                    </button>
+                                </div>
+                                <div class="filter-row">
+                                    <button class="filter-btn active" id="filter-shape-rect"
+                                        onclick="setFilterShape('rectangle')">
+                                        Rectangle
+                                    </button>
+                                    <button class="filter-btn" id="filter-shape-poly"
+                                        onclick="setFilterShape('polygon')">
+                                        Polygon
+                                    </button>
+                                </div>
+                                <div class="input-group" id="filter-speed-group" style="display: none; margin: 0;">
+                                    <label>Speed percent:</label>
+                                    <input type="number" id="filter-speed-percent" value="50" min="1" max="100" step="1">
+                                </div>
+                                <div class="filter-actions">
+                                    <button class="btn-save" id="filter-draw-btn" onclick="startFilterDraw()">
+                                        Start Draw
+                                    </button>
+                                    <button class="btn-save" id="filter-finish-btn"
+                                        style="display: none; background: #4CAF50;" onclick="finishFilterPolygon()">
+                                        Finish Polygon
+                                    </button>
+                                    <button class="btn-delete" id="filter-cancel-btn" onclick="cancelFilterDraw()">
+                                        Cancel
+                                    </button>
+                                </div>
+                                <div class="filter-actions">
+                                    <button class="btn-delete" onclick="clearFilterLayer(activeFilterLayer)">
+                                        Clear Layer
+                                    </button>
+                                    <button class="btn-delete" onclick="clearFilterLayer('all')">
+                                        Clear All
+                                    </button>
+                                </div>
                             </div>
-                            <div class="filter-row">
-                                <button class="filter-btn active" id="filter-shape-rect"
-                                    onclick="setFilterShape('rectangle')">
-                                    Rectangle
-                                </button>
-                                <button class="filter-btn" id="filter-shape-poly"
-                                    onclick="setFilterShape('polygon')">
-                                    Polygon
-                                </button>
-                            </div>
-                            <div class="input-group" id="filter-speed-group" style="display: none; margin: 0;">
-                                <label>Speed percent:</label>
-                                <input type="number" id="filter-speed-percent" value="50" min="1" max="100" step="1">
-                            </div>
-                            <div class="filter-actions">
-                                <button class="btn-save" id="filter-draw-btn" onclick="startFilterDraw()">
-                                    Start Draw
-                                </button>
-                                <button class="btn-save" id="filter-finish-btn"
-                                    style="display: none; background: #4CAF50;" onclick="finishFilterPolygon()">
-                                    Finish Polygon
-                                </button>
-                                <button class="btn-delete" id="filter-cancel-btn" onclick="cancelFilterDraw()">
-                                    Cancel
-                                </button>
-                            </div>
-                            <div class="filter-actions">
-                                <button class="btn-delete" onclick="clearFilterLayer(activeFilterLayer)">
-                                    Clear Layer
-                                </button>
-                                <button class="btn-delete" onclick="clearFilterLayer('all')">
-                                    Clear All
-                                </button>
-                            </div>
-                        </div>
-                        <div class="filter-list" id="filter-list">
-                            <div style="color: #888; font-size: 12px; text-align: center; padding: 10px;">
-                                No filters
+                            <div class="filter-list" id="filter-list">
+                                <div style="color: #888; font-size: 12px; text-align: center; padding: 10px;">
+                                    No filters
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </details>
 
-                    <div class="card tool-panel" id="zone-add-card">
-                        <div class="card-header">
-                            <h3 class="card-title">Add New Zone</h3>
+                    <details class="card tool-panel dropdown-card" id="zone-add-card" open>
+                        <summary>Add New Zone</summary>
+                        <div class="dropdown-content">
+                            <div class="zone-type-selector">
+                                <button class="zone-type-btn active" onclick="setZoneType('normal')" id="zone-type-normal">
+                                    Normal
+                                </button>
+                                <button class="zone-type-btn action" onclick="setZoneType('action')" id="zone-type-action">
+                                    Action
+                                </button>
+                                <button class="zone-type-btn charge" onclick="setZoneType('charge')" id="zone-type-charge">
+                                    Charge
+                                </button>
+                            </div>
+                            <div class="controls" style="background: transparent; padding: 0; margin: 0;">
+                                <div class="input-group">
+                                    <label>Zone Name:</label>
+                                    <input type="text" id="zone-name" placeholder="e.g., ZONE1, LOADING_DOCK">
+                                </div>
+                                <div class="input-group">
+                                    <label>X Position (m):</label>
+                                    <input type="number" id="zone-x" step="0.01" placeholder="Click on map" readonly>
+                                </div>
+                                <div class="input-group">
+                                    <label>Y Position (m):</label>
+                                    <input type="number" id="zone-y" step="0.01" placeholder="Click on map" readonly>
+                                </div>
+                                <div class="input-group">
+                                    <label>Orientation (rad):</label>
+                                    <input type="number" id="zone-theta" step="0.1" value="0" placeholder="Drag after click"
+                                        readonly>
+                                </div>
+                                <div class="input-group">
+                                    <label>Speed (m/s):</label>
+                                    <input type="number" id="zone-speed" step="0.05" value="0.5" min="0.1" max="1.5"
+                                        placeholder="0.5">
+                                </div>
+                                <div class="input-group" id="action-param-group" style="display: none;">
+                                    <label>Action:</label>
+                                    <input type="text" id="zone-action" placeholder="e.g., pickup, drop, wait" value="">
+                                </div>
+                                <div class="input-group" id="charge-param-group" style="display: none;">
+                                    <label>Charge Duration (s):</label>
+                                    <input type="number" id="zone-charge-duration" step="10" value="300" min="0"
+                                        placeholder="300">
+                                </div>
+                                <button class="btn-save" onclick="saveZone()">Save Zone</button>
+                            </div>
                         </div>
-                        <div class="zone-type-selector">
-                            <button class="zone-type-btn active" onclick="setZoneType('normal')" id="zone-type-normal">
-                                Normal
-                            </button>
-                            <button class="zone-type-btn action" onclick="setZoneType('action')" id="zone-type-action">
-                                Action
-                            </button>
-                            <button class="zone-type-btn charge" onclick="setZoneType('charge')" id="zone-type-charge">
-                                Charge
-                            </button>
-                        </div>
-                        <div class="controls" style="background: transparent; padding: 0; margin: 0;">
-                            <div class="input-group">
-                                <label>Zone Name:</label>
-                                <input type="text" id="zone-name" placeholder="e.g., ZONE1, LOADING_DOCK">
-                            </div>
-                            <div class="input-group">
-                                <label>X Position (m):</label>
-                                <input type="number" id="zone-x" step="0.01" placeholder="Click on map" readonly>
-                            </div>
-                            <div class="input-group">
-                                <label>Y Position (m):</label>
-                                <input type="number" id="zone-y" step="0.01" placeholder="Click on map" readonly>
-                            </div>
-                            <div class="input-group">
-                                <label>Orientation (rad):</label>
-                                <input type="number" id="zone-theta" step="0.1" value="0" placeholder="Drag after click"
-                                    readonly>
-                            </div>
-                            <div class="input-group">
-                                <label>Speed (m/s):</label>
-                                <input type="number" id="zone-speed" step="0.05" value="0.5" min="0.1" max="1.5"
-                                    placeholder="0.5">
-                            </div>
-                            <div class="input-group" id="action-param-group" style="display: none;">
-                                <label>Action:</label>
-                                <input type="text" id="zone-action" placeholder="e.g., pickup, drop, wait" value="">
-                            </div>
-                            <div class="input-group" id="charge-param-group" style="display: none;">
-                                <label>Charge Duration (s):</label>
-                                <input type="number" id="zone-charge-duration" step="10" value="300" min="0"
-                                    placeholder="300">
-                            </div>
-                            <button class="btn-save" onclick="saveZone()">Save Zone</button>
-                            <div id="status"></div>
-                        </div>
-                    </div>
+                    </details>
 
                     <div class="card">
                         <div class="collapsible-header" onclick="toggleZonesCollapse()" style="margin: 0; padding: 0;">
@@ -1536,62 +1654,81 @@
                             </div>
                         </div>
 
-                        <div class="card tool-panel" id="path-drawing-card">
-                            <button class="btn-save" style="background: #9C27B0; width: 100%;"
-                                onclick="toggleSequence()" id="sequence-btn">
-                                Start Sequence
-                            </button>
-                            <div id="sequence-status"
-                                style="display: none; margin-top: 10px; padding: 10px; background: rgba(156, 39, 176, 0.2); border-radius: 4px; font-size: 12px;">
-                                <div style="color: #9C27B0; font-weight: bold;">Sequence Active</div>
-                                <div id="sequence-progress" style="color: #ccc; margin-top: 5px;"></div>
-                            </div>
-                        </div>
+                    </div>
 
-                        <div class="card">
-                            <h2>Path Drawing</h2>
-                            <button class="btn-save" style="background: #2196F3; width: 100%;"
-                                onclick="togglePathDrawing()" id="path-draw-btn">
-                                Start Drawing
-                            </button>
-                            <div id="path-status"
-                                style="display: none; margin-top: 10px; padding: 10px; background: rgba(33, 150, 243, 0.2); border-radius: 4px; font-size: 12px;">
-                                <div style="color: #2196F3; font-weight: bold;">Drawing Mode Active</div>
-                                <div id="path-point-count" style="color: #ccc; margin-top: 5px;">Points: 0</div>
-                                <div style="margin-top: 10px; display: flex; gap: 8px;">
-                                    <button class="btn-save" style="background: #4CAF50; flex: 1; padding: 6px;"
-                                        onclick="sendDrawnPath()">
-                                        Follow Path
-                                    </button>
-                                    <button class="btn-save" style="background: #FF9800; flex: 1; padding: 6px;"
-                                        onclick="saveDrawnPath()">
-                                        Save Path
-                                    </button>
-                                    <button class="btn-delete" style="flex: 1; padding: 6px;"
-                                        onclick="clearDrawnPath()">
-                                        Clear
-                                    </button>
-                                </div>
-                            </div>
-                            <div id="path-following-status"
-                                style="display: none; margin-top: 10px; padding: 10px; background: rgba(76, 175, 80, 0.2); border-radius: 4px; font-size: 12px;">
-                                <div style="color: #4CAF50; font-weight: bold;">Path Following Active</div>
-                                <div id="path-following-progress" style="color: #ccc; margin-top: 5px;"></div>
-                                <button class="btn-delete" style="width: 100%; margin-top: 10px; padding: 6px;"
-                                    onclick="stopPathFollowing()">
-                                    Stop Path
+                    <div class="card" id="odom-card">
+                        <h2>Odometry</h2>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #cfd8dc;">
+                            <span>Speed</span>
+                            <span id="odom-speed">--</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #9fb0c1; margin-top: 6px;">
+                            <span>Linear (x,y)</span>
+                            <span id="odom-linear">--</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #9fb0c1; margin-top: 6px;">
+                            <span>Angular (z)</span>
+                            <span id="odom-angular">--</span>
+                        </div>
+                    </div>
+
+                    <div class="card tool-panel" id="sequence-card">
+                        <h2>Start Sequence</h2>
+                        <button class="btn-save" style="background: #9C27B0; width: 100%;"
+                            onclick="toggleSequence()" id="sequence-btn">
+                            Start Sequence
+                        </button>
+                        <div id="sequence-status"
+                            style="display: none; margin-top: 10px; padding: 10px; background: rgba(156, 39, 176, 0.2); border-radius: 4px; font-size: 12px;">
+                            <div style="color: #9C27B0; font-weight: bold;">Sequence Active</div>
+                            <div id="sequence-progress" style="color: #ccc; margin-top: 5px;"></div>
+                        </div>
+                    </div>
+
+                    <div class="card tool-panel" id="path-drawing-card">
+                        <h2>Path Drawing</h2>
+                        <button class="btn-save" style="background: #2196F3; width: 100%;"
+                            onclick="togglePathDrawing()" id="path-draw-btn">
+                            Start Drawing
+                        </button>
+                        <div id="path-status"
+                            style="display: none; margin-top: 10px; padding: 10px; background: rgba(33, 150, 243, 0.2); border-radius: 4px; font-size: 12px;">
+                            <div style="color: #2196F3; font-weight: bold;">Drawing Mode Active</div>
+                            <div id="path-point-count" style="color: #ccc; margin-top: 5px;">Points: 0</div>
+                            <div style="margin-top: 10px; display: flex; gap: 8px;">
+                                <button class="btn-save" style="background: #4CAF50; flex: 1; padding: 6px;"
+                                    onclick="sendDrawnPath()">
+                                    Follow Path
+                                </button>
+                                <button class="btn-save" style="background: #FF9800; flex: 1; padding: 6px;"
+                                    onclick="saveDrawnPath()">
+                                    Save Path
+                                </button>
+                                <button class="btn-delete" style="flex: 1; padding: 6px;"
+                                    onclick="clearDrawnPath()">
+                                    Clear
                                 </button>
                             </div>
                         </div>
+                        <div id="path-following-status"
+                            style="display: none; margin-top: 10px; padding: 10px; background: rgba(76, 175, 80, 0.2); border-radius: 4px; font-size: 12px;">
+                            <div style="color: #4CAF50; font-weight: bold;">Path Following Active</div>
+                            <div id="path-following-progress" style="color: #ccc; margin-top: 5px;"></div>
+                            <button class="btn-delete" style="width: 100%; margin-top: 10px; padding: 6px;"
+                                onclick="stopPathFollowing()">
+                                Stop Path
+                            </button>
+                        </div>
+                    </div>
 
-                        <div class="card">
-                            <h2>Saved Paths</h2>
-                            <div id="saved-paths-list" style="max-height: 200px; overflow-y: auto;">
-                                <div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">
-                                    No saved paths
-                                </div>
+                    <div class="card">
+                        <h2>Saved Paths</h2>
+                        <div id="saved-paths-list" style="max-height: 200px; overflow-y: auto;">
+                            <div style="color: #888; font-size: 12px; text-align: center; padding: 20px;">
+                                No saved paths
                             </div>
                         </div>
+                    </div>
 
                         <div class="card" id="safety-controls" style="display: none;">
                             <button class="btn-save" style="background: #FFC107; width: 100%;" onclick="forceResume()">
@@ -1843,6 +1980,7 @@
                 // Path drawing state
                 let isDrawingPath = false;
                 let drawnPath = [];  // Array of {x, y} in world coordinates
+                let savedPathsCache = {};  // name -> [{x,y}]
                 let pathFollowingActive = false;
                 let previousPathFollowingActive = false;
                 let currentPathWaypoint = 0;  // Current waypoint being navigated to
@@ -1857,10 +1995,9 @@
                 // Filter layers
                 const FILTER_LAYER_META = {
                     no_go_zones: { label: 'Keepout', color: '#f44336', fill: 'rgba(244, 67, 54, 0.18)' },
-                    restricted: { label: 'Restricted', color: '#FFC107', fill: 'rgba(255, 193, 7, 0.18)' },
-                    slow_zones: { label: 'Slow', color: '#2196F3', fill: 'rgba(33, 150, 243, 0.18)' }
+                    slow_zones: { label: 'Speed', color: '#2196F3', fill: 'rgba(33, 150, 243, 0.18)' }
                 };
-                let filterLayers = { no_go_zones: [], restricted: [], slow_zones: [] };
+                let filterLayers = { no_go_zones: [], slow_zones: [] };
                 let activeFilterLayer = 'no_go_zones';
                 let activeFilterShape = 'rectangle';
                 let filterDrawMode = null; // 'rectangle' | 'polygon'
@@ -1923,6 +2060,37 @@
                             updateSequenceUI(data);
                         })
                         .catch(error => console.error('Error loading sequence status:', error));
+                }
+
+                function loadOdom() {
+                    fetch('/api/odom')
+                        .then(response => response.json())
+                        .then(data => {
+                            const speedEl = document.getElementById('odom-speed');
+                            const linearEl = document.getElementById('odom-linear');
+                            const angularEl = document.getElementById('odom-angular');
+                            if (data.error) {
+                                speedEl.textContent = '--';
+                                linearEl.textContent = '--';
+                                angularEl.textContent = '--';
+                                return;
+                            }
+                            const speed = data.speed != null ? `${data.speed.toFixed(2)} m/s` : '--';
+                            const lx = data.linear && data.linear.x != null ? data.linear.x.toFixed(2) : '--';
+                            const ly = data.linear && data.linear.y != null ? data.linear.y.toFixed(2) : '--';
+                            const az = data.angular && data.angular.z != null ? data.angular.z.toFixed(2) : '--';
+                            speedEl.textContent = speed;
+                            linearEl.textContent = `${lx}, ${ly}`;
+                            angularEl.textContent = az;
+                        })
+                        .catch(() => {
+                            const speedEl = document.getElementById('odom-speed');
+                            const linearEl = document.getElementById('odom-linear');
+                            const angularEl = document.getElementById('odom-angular');
+                            speedEl.textContent = '--';
+                            linearEl.textContent = '--';
+                            angularEl.textContent = '--';
+                        });
                 }
 
                 function updateSequenceUI(status) {
@@ -2010,8 +2178,7 @@
                 function updateFilterControls() {
                     const layerButtons = {
                         no_go_zones: document.getElementById('filter-layer-no-go'),
-                        restricted: document.getElementById('filter-layer-restricted'),
-                        slow_zones: document.getElementById('filter-layer-slow')
+                        slow_zones: document.getElementById('filter-layer-speed')
                     };
                     Object.entries(layerButtons).forEach(([key, btn]) => {
                         if (btn) btn.classList.toggle('active', key === activeFilterLayer);
@@ -2042,6 +2209,9 @@
 
                     document.querySelectorAll('.tool-panel').forEach(el => el.classList.remove('active'));
                     panel.classList.add('active');
+                    if (panel.tagName === 'DETAILS') {
+                        panel.open = true;
+                    }
 
                     if (panelId === 'manual-control-card') {
                         const content = document.getElementById('manual-content');
@@ -2297,7 +2467,6 @@
                         .then(data => {
                             filterLayers = {
                                 no_go_zones: data.no_go_zones || [],
-                                restricted: data.restricted || [],
                                 slow_zones: data.slow_zones || []
                             };
                             renderFilterList();
@@ -2489,6 +2658,7 @@
 
                 let dragStartX = 0;
                 let dragStartY = 0;
+                let rightPanActive = false;
 
                 // Initialize
                 window.onload = function () {
@@ -2516,6 +2686,7 @@
                     loadFilters();
                     updateFilterControls();
                     loadRobotPose();
+                    loadOdom();
                     loadEStopStatus();
                     loadSafetyStatus();
                     loadSequenceStatus();
@@ -2548,6 +2719,11 @@
                     setInterval(() => {
                         loadSafetyStatus();
                     }, 1000);
+
+                    // Refresh odom speed twice per second
+                    setInterval(() => {
+                        loadOdom();
+                    }, 500);
 
                     // Refresh path following status every second
                     setInterval(() => {
@@ -2590,15 +2766,10 @@
                             mapData = data;
                             const img = new Image();
                             img.onload = function() {
-                                canvas.width = window.innerWidth - 320;
-                                canvas.height = window.innerHeight;
+                                resizeCanvasToContainer();
                                 mapData.image = img;
                                 mapReady = true;
-                                
-                                // Center the map
-                                offsetX = (canvas.width - img.width) / 2;
-                                offsetY = (canvas.height - img.height) / 2;
-                                
+                                resetView();
                                 drawMap();
                             };
                             img.onerror = function() {
@@ -3135,16 +3306,27 @@
 
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                    // Draw map
+                    // Draw map (respect map origin yaw)
                     ctx.save();
                     ctx.translate(offsetX, offsetY);
                     ctx.scale(scale, scale);
+                    const yaw = (mapData.origin && mapData.origin.length > 2) ? mapData.origin[2] : 0;
+                    if (yaw !== 0) {
+                        // Rotate around map origin (bottom-left of image)
+                        ctx.translate(0, mapData.image.height);
+                        ctx.rotate(yaw);
+                        ctx.translate(0, -mapData.image.height);
+                    }
                     ctx.drawImage(mapData.image, 0, 0);
                     ctx.restore();
 
                     drawFilterLayers();
                     drawFilterPreview();
                     drawPoseEstimatePreview();
+
+                    // Draw world origin axes
+                    const [ox, oy] = worldToPixel(0, 0);
+                    drawFrameAxes(ox, oy, 0, 20, 'origin');
 
                     // Draw zones
                     for (const [name, zone] of Object.entries(zones)) {
@@ -3206,6 +3388,27 @@
                             py + Math.sin(angle) * arrowLen
                         );
                         ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    // Draw saved paths from layouts
+                    if (savedPathsCache && Object.keys(savedPathsCache).length > 0) {
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(79, 195, 247, 0.5)';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([6, 6]);
+                        for (const [name, path] of Object.entries(savedPathsCache)) {
+                            if (!Array.isArray(path) || path.length < 2) continue;
+                            ctx.beginPath();
+                            const [sx, sy] = worldToPixel(path[0].x, path[0].y);
+                            ctx.moveTo(sx, sy);
+                            for (let i = 1; i < path.length; i++) {
+                                const [px, py] = worldToPixel(path[i].x, path[i].y);
+                                ctx.lineTo(px, py);
+                            }
+                            ctx.stroke();
+                        }
+                        ctx.setLineDash([]);
                         ctx.restore();
                     }
 
@@ -3309,6 +3512,9 @@
                         ctx.fill();
 
                         ctx.restore();
+
+                        // Draw robot frame axes
+                        drawFrameAxes(rx, ry, -robotPose.theta, 18, 'robot');
 
                         // Draw robot label (not rotated)
                         ctx.save();
@@ -3584,6 +3790,47 @@
                     ctx.restore();
                 }
 
+                function drawFrameAxes(px, py, angle, size, label) {
+                    const cos = Math.cos(angle);
+                    const sin = Math.sin(angle);
+                    const xEnd = { x: px + size * cos, y: py + size * sin };
+                    const yEnd = { x: px - size * sin, y: py + size * cos };
+
+                    ctx.save();
+                    ctx.lineWidth = 2;
+
+                    ctx.strokeStyle = '#ff5252';
+                    ctx.beginPath();
+                    ctx.moveTo(px, py);
+                    ctx.lineTo(xEnd.x, xEnd.y);
+                    ctx.stroke();
+
+                    ctx.strokeStyle = '#00e676';
+                    ctx.beginPath();
+                    ctx.moveTo(px, py);
+                    ctx.lineTo(yEnd.x, yEnd.y);
+                    ctx.stroke();
+
+                    ctx.fillStyle = '#ff5252';
+                    ctx.fillRect(xEnd.x - 2, xEnd.y - 2, 4, 4);
+                    ctx.fillStyle = '#00e676';
+                    ctx.fillRect(yEnd.x - 2, yEnd.y - 2, 4, 4);
+
+                    if (label) {
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 1;
+                        const textWidth = ctx.measureText(label).width;
+                        ctx.fillRect(px - textWidth / 2 - 4, py - 22, textWidth + 8, 16);
+                        ctx.strokeRect(px - textWidth / 2 - 4, py - 22, textWidth + 8, 16);
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 11px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(label, px, py - 10);
+                    }
+                    ctx.restore();
+                }
+
                 function drawFilterShape(obj, meta) {
                     const type = obj.type || 'rectangle';
                     const style = { stroke: meta.color, fill: meta.fill };
@@ -3693,10 +3940,19 @@
 
                     const resolution = mapData.resolution;
                     const origin = mapData.origin;
+                    const yaw = (origin && origin.length > 2) ? origin[2] : 0;
+
+                    // Transform world -> map frame (inverse yaw)
+                    const dx = wx - origin[0];
+                    const dy = wy - origin[1];
+                    const cos = Math.cos(-yaw);
+                    const sin = Math.sin(-yaw);
+                    const mx = dx * cos - dy * sin;
+                    const my = dx * sin + dy * cos;
 
                     // Convert world coordinates to pixel coordinates
-                    const px = (wx - origin[0]) / resolution;
-                    const py = mapData.image.height - (wy - origin[1]) / resolution;
+                    const px = mx / resolution;
+                    const py = mapData.image.height - my / resolution;
 
                     // Apply zoom and pan
                     return [
@@ -3710,16 +3966,60 @@
 
                     const resolution = mapData.resolution;
                     const origin = mapData.origin;
+                    const yaw = (origin && origin.length > 2) ? origin[2] : 0;
 
                     // Remove zoom and pan
                     const imgX = (px - offsetX) / scale;
                     const imgY = (py - offsetY) / scale;
 
                     // Convert pixel to world coordinates
-                    const wx = imgX * resolution + origin[0];
-                    const wy = (mapData.image.height - imgY) * resolution + origin[1];
+                    const mx = imgX * resolution;
+                    const my = (mapData.image.height - imgY) * resolution;
+                    const cos = Math.cos(yaw);
+                    const sin = Math.sin(yaw);
+                    const wx = origin[0] + mx * cos - my * sin;
+                    const wy = origin[1] + mx * sin + my * cos;
 
                     return [wx, wy];
+                }
+
+                function distancePointToSegment(px, py, ax, ay, bx, by) {
+                    const abx = bx - ax;
+                    const aby = by - ay;
+                    const apx = px - ax;
+                    const apy = py - ay;
+                    const abLen2 = abx * abx + aby * aby;
+                    if (abLen2 === 0) {
+                        const dx = px - ax;
+                        const dy = py - ay;
+                        return Math.hypot(dx, dy);
+                    }
+                    let t = (apx * abx + apy * aby) / abLen2;
+                    t = Math.max(0, Math.min(1, t));
+                    const cx = ax + abx * t;
+                    const cy = ay + aby * t;
+                    return Math.hypot(px - cx, py - cy);
+                }
+
+                function findClosestSavedPath(wx, wy, threshold = 0.35) {
+                    let bestName = null;
+                    let bestDist = Infinity;
+                    for (const [name, path] of Object.entries(savedPathsCache || {})) {
+                        if (!Array.isArray(path) || path.length < 2) continue;
+                        for (let i = 0; i < path.length - 1; i++) {
+                            const a = path[i];
+                            const b = path[i + 1];
+                            const d = distancePointToSegment(wx, wy, a.x, a.y, b.x, b.y);
+                            if (d < bestDist) {
+                                bestDist = d;
+                                bestName = name;
+                            }
+                        }
+                    }
+                    if (bestDist <= threshold) {
+                        return bestName;
+                    }
+                    return null;
                 }
 
                 function onCanvasClick(e) {
@@ -3730,6 +4030,10 @@
                     const y = e.clientY - rect.top;
 
                     const [wx, wy] = pixelToWorld(x, y);
+
+                    if (currentTool === 'pan' && !spaceKeyPressed) {
+                        setMapTool('select');
+                    }
 
                     if (poseEstimateMode) {
                         if (poseStep === 0) {
@@ -3771,6 +4075,14 @@
 
                     if (filterDrawMode === 'rectangle') {
                         return;
+                    }
+
+                    if (!isDrawingPath && !settingOrientation && !poseEstimateMode && !filterDrawMode) {
+                        const hitPath = findClosestSavedPath(wx, wy);
+                        if (hitPath) {
+                            followSavedPath(hitPath);
+                            return;
+                        }
                     }
 
                     if (isDrawingPath) {
@@ -3818,11 +4130,17 @@
                         return;
                     }
                     if (e.button === 2 || e.ctrlKey) { // Right click or Ctrl+click
+                        setMapTool('pan');
+                        rightPanActive = true;
                         isDragging = true;
                         dragStartX = e.clientX - offsetX;
                         dragStartY = e.clientY - offsetY;
                         canvas.style.cursor = 'grabbing';
                         e.preventDefault();
+                        return;
+                    }
+                    if (e.button === 0 && currentTool === 'pan' && !spaceKeyPressed) {
+                        setMapTool('select');
                     }
                 }
 
@@ -3894,6 +4212,10 @@
                         editingZone = null;
                     }
                     isDragging = false;
+                    if (rightPanActive) {
+                        rightPanActive = false;
+                        setMapTool('select');
+                    }
                     updateCursor();
                 }
 
@@ -3944,14 +4266,54 @@
                     }
                 }
 
+                function getMapBounds() {
+                    const yaw = (mapData.origin && mapData.origin.length > 2) ? mapData.origin[2] : 0;
+                    const w = mapData.image.width;
+                    const h = mapData.image.height;
+                    const cx = 0;
+                    const cy = h;
+                    const cos = Math.cos(yaw);
+                    const sin = Math.sin(yaw);
+                    const pts = [
+                        { x: 0, y: 0 },
+                        { x: w, y: 0 },
+                        { x: w, y: h },
+                        { x: 0, y: h }
+                    ].map(p => {
+                        const dx = p.x - cx;
+                        const dy = p.y - cy;
+                        return {
+                            x: cx + dx * cos - dy * sin,
+                            y: cy + dx * sin + dy * cos
+                        };
+                    });
+                    const xs = pts.map(p => p.x);
+                    const ys = pts.map(p => p.y);
+                    const minX = Math.min(...xs);
+                    const maxX = Math.max(...xs);
+                    const minY = Math.min(...ys);
+                    const maxY = Math.max(...ys);
+                    return {
+                        minX,
+                        minY,
+                        width: maxX - minX,
+                        height: maxY - minY
+                    };
+                }
+
+                function centerMapForScale() {
+                    const dpr = window.devicePixelRatio || 1;
+                    const cw = canvas.width / dpr;
+                    const ch = canvas.height / dpr;
+                    const bounds = getMapBounds();
+                    offsetX = (cw - bounds.width * scale) / 2 - bounds.minX * scale;
+                    offsetY = (ch - bounds.height * scale) / 2 - bounds.minY * scale;
+                }
+
                 function resetView() {
                     if (mapData && mapData.image) {
                         scale = 1;
-                        const dpr = window.devicePixelRatio || 1;
-                            const cw = canvas.width / dpr;
-                            const ch = canvas.height / dpr;
-                            offsetX = (cw - mapData.image.width * scale) / 2;
-                            offsetY = (ch - mapData.image.height * scale) / 2;
+                        centerMapForScale();
                         updateZoomLevel();
                         drawMap();
                     }
@@ -3960,12 +4322,11 @@
                 function fitToScreen() {
                     if (mapData && mapData.image) {
                         const padding = 50;
-                        const scaleX = (canvas.width - padding * 2) / mapData.image.width;
-                        const scaleY = (canvas.height - padding * 2) / mapData.image.height;
+                        const bounds = getMapBounds();
+                        const scaleX = (canvas.width - padding * 2) / bounds.width;
+                        const scaleY = (canvas.height - padding * 2) / bounds.height;
                         scale = Math.min(scaleX, scaleY);
-
-                        offsetX = (canvas.width - mapData.image.width * scale) / 2;
-                        offsetY = (canvas.height - mapData.image.height * scale) / 2;
+                        centerMapForScale();
                         updateZoomLevel();
                         drawMap();
                     }
@@ -4467,6 +4828,10 @@
                             const list = document.getElementById('saved-paths-list');
                             const paths = data.paths || {};
                             const names = Object.keys(paths);
+                            savedPathsCache = paths;
+                            if (mapData) {
+                                drawMap();
+                            }
 
                             if (names.length === 0) {
                                 list.innerHTML = '<div style="color: #666; padding: 10px;">No saved paths</div>';
@@ -4783,15 +5148,55 @@
                         });
                 }
 
-                function showStatus(message, type) {
-                    const status = document.getElementById('status');
-                    status.textContent = message;
-                    status.className = 'status ' + type;
+                const logEntries = [];
 
-                    setTimeout(() => {
-                        status.textContent = '';
-                        status.className = 'status';
-                    }, 5000);
+                function toggleLogPanel() {
+                    const panel = document.getElementById('log-panel');
+                    panel.style.display = panel.style.display === 'none' || !panel.style.display ? 'block' : 'none';
+                }
+
+                function clearLogs() {
+                    logEntries.length = 0;
+                    renderLogs();
+                }
+
+                function renderLogs() {
+                    const list = document.getElementById('log-list');
+                    const badge = document.getElementById('log-badge');
+                    list.innerHTML = '';
+                    if (logEntries.length === 0) {
+                        const empty = document.createElement('div');
+                        empty.className = 'log-entry info';
+                        empty.textContent = 'No messages yet.';
+                        list.appendChild(empty);
+                    } else {
+                        logEntries.slice().reverse().forEach(entry => {
+                            const row = document.createElement('div');
+                            row.className = `log-entry ${entry.type || 'info'}`;
+                            row.textContent = `[${entry.time}] ${entry.message}`;
+                            list.appendChild(row);
+                        });
+                    }
+                    badge.textContent = String(logEntries.length);
+                }
+
+                function showStatus(message, type = 'info') {
+                    const entry = {
+                        message,
+                        type,
+                        time: new Date().toLocaleTimeString()
+                    };
+                    logEntries.push(entry);
+                    if (logEntries.length > 100) {
+                        logEntries.shift();
+                    }
+                    renderLogs();
+
+                    const indicator = document.getElementById('log-indicator');
+                    if (type === 'error') {
+                        indicator.classList.add('is-error');
+                        setTimeout(() => indicator.classList.remove('is-error'), 2000);
+                    }
                 }
 
                 // Notification popup functions
