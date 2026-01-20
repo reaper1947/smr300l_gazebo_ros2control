@@ -1,0 +1,5 @@
+If it’s “kind of close but not exact”: set sigma lower (try 0.10).
+
+If it fails in big maps: increase num_xy_samples (e.g., 4000) and top_k (e.g., 60).
+
+If it’s slow: increase scan_downsample or reduce yaw_steps.

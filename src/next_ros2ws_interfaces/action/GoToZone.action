@@ -1,0 +1,8 @@
+# Navigate to a named zone
+string name
+---
+bool success
+string message
+---
+float32 progress
+string status

@@ -1,0 +1,5 @@
+# Service to switch active map and update all configs
+string map_yaml_path           # Full path to the map YAML file
+---
+bool success
+string message

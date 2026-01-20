@@ -1,0 +1,221 @@
+zones:
+  A1:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 3.61
+      y: 0.47
+      z: 0.0
+  A2:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 3.66
+      y: -1.22
+      z: 0.0
+  A3:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 3.71
+      y: -3.42
+      z: 0.0
+  A4:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 3.71
+      y: -5.28
+      z: 0.0
+  A5:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 3.51
+      y: -6.83
+      z: 0.0
+  A6:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 3.66
+      y: -8.57
+      z: 0.0
+  B1:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 5.46
+      y: 0.68
+      z: 0.0
+  B2:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 5.61
+      y: -1.13
+      z: 0.0
+  B3:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 5.66
+      y: -2.83
+      z: 0.0
+  B4:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 5.41
+      y: -4.63
+      z: 0.0
+  B5:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 5.61
+      y: -6.88
+      z: 0.0
+  B6:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 5.51
+      y: -8.88
+      z: 0.0
+  CHARGE:
+    frame_id: map
+    orientation:
+      w: -0.9997555067434422
+      x: 0.0
+      y: 0.0
+      z: 0.0221116877728314
+    position:
+      x: 0.71
+      y: -8.82
+      z: 0.0
+  EXIT BAY:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: 4.21
+      y: 2.18
+      z: 0.0
+  HOME:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: -0.79
+      y: -0.67
+      z: 0.0
+  Z1:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: -5.79
+      y: -7.22
+      z: 0.0
+  Z2:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: -5.79
+      y: -2.92
+      z: 0.0
+  Z3:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: -5.74
+      y: 1.33
+      z: 0.0
+  Z4:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: -5.94
+      y: 5.88
+      z: 0.0
+  Z5:
+    frame_id: map
+    orientation:
+      w: 1.0
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    position:
+      x: -5.94
+      y: 9.38
+      z: 0.0

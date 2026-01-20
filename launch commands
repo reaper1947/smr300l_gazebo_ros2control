@@ -1,0 +1,42 @@
+
+export GAZEBO_MODEL_DATABASE_URI=""
+export GAZEBO_MODEL_PATH=$GAZEBO_MODEL_PATH:/home/aun/Downloads/aws-robomaker-small-warehouse-world-ros1/models
+source install/setup.bash
+ros2 launch my_bot launch_sim.launch.py use_sim_time:=true world:=/home/aun/Downloads/small_warehouse.world
+
+
+
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/cmd_vel_joy
+
+ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true # Dont launch during navigation!
+
+source install/setup.bash
+ros2 run rviz2 rviz2 --ros-args -p use_sim_time:=true
+
+
+
+
+colcon build --symlink-install --base-paths . src
+
+source install/setup.bash
+ros2 launch my_bot zone_nav_ui.launch.py
+
+
+
+source install/setup.bash
+ros2 launch my_bot mode_switcher.launch.py
+2
+
+cd /home/aun/Downloads/smr300l_gazebo_ros2control-main
+./nav2_launch_wrapper.sh use_sim_time:=true
+
+pkill -KILL -u "$USER" -f "(/opt/ros/|ros2|launch.py|robot_state_publisher|rviz2|gazebo|controller_manager|spawner_|zone_web_ui)"
+
+
+ros2 run rosbridge_server rosbridge_websocket
+
+
+ros2 daemon stop
+pkill -f ros2daemon || true
+ros2 daemon start
+ros2 node list

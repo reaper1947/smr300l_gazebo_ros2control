@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #101317;
+            color: #e6e6e6;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .editor-root {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 16px;
+            background: #1b2026;
+            border-bottom: 1px solid #2c343d;
+            flex-wrap: wrap;
+        }
+
+        .tool-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tool-btn {
+            padding: 8px 12px;
+            border: 1px solid #36414c;
+            background: #2a323b;
+            color: #e6e6e6;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.15s ease;
+        }
+
+        .tool-btn:hover {
+            background: #354150;
+            border-color: #4b5a6b;
+        }
+
+        .tool-btn.active {
+            background: #3a6ea5;
+            border-color: #3a6ea5;
+            box-shadow: 0 0 12px rgba(58, 110, 165, 0.4);
+        }
+
+        .brush-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #b6c0ca;
+        }
+
+        .brush-label input {
+            accent-color: #3a6ea5;
+        }
+
+        .brush-value {
+            min-width: 28px;
+            text-align: right;
+            font-size: 12px;
+            color: #9fb0c1;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #7f8a96;
+        }
+
+        .canvas-wrap {
+            position: relative;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0d1014;
+        }
+
+        #editor {
+            max-width: 96vw;
+            max-height: 86vh;
+            background: #0f1318;
+            border: 1px solid #2c343d;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+            touch-action: none;
+            cursor: crosshair;
+        }
+
+        .status {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            background: rgba(20, 24, 30, 0.9);
+            border: 1px solid #2c343d;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #c6d2dd;
+        }
+
+        .zone-label {
+            position: absolute;
+            pointer-events: none;
+            font-size: 11px;
+            color: #ffffff;
+            background: rgba(20, 24, 30, 0.75);
+            padding: 2px 6px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            white-space: nowrap;
+        }
+
+        .layout-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid #36414c;
+            background: #2a323b;
+            font-size: 12px;
+            color: #cdd7e2;
+        }
+
+        .layout-chip.is-empty {
+            border-color: #6a3b3b;
+            background: #3a2323;
+            color: #f8b7b7;
+        }
+    </style>
+</head>
+<body>
+    <div class="editor-root">
+        <header class="toolbar" id="toolbar">
+            <div class="tool-group">
+                <button class="tool-btn active" data-tool="add">Add</button>
+                <button class="tool-btn" data-tool="erase">Erase</button>
+                <button class="tool-btn" data-tool="move_zone">Move Zone</button>
+                <button class="tool-btn" data-tool="rotate_zone">Rotate Zone</button>
+                <button class="tool-btn" data-tool="add_path">Add Path</button>
+                <button class="tool-btn" id="move-origin-toggle">Move Origin</button>
+            </div>
+            <div class="tool-group">
+                <span id="layout-chip" class="layout-chip">Layout: loading...</span>
+            </div>
+            <div class="tool-group">
+                <label class="brush-label">
+                    Shift X
+                    <input id="origin-x" type="number" step="0.01" value="0">
+                </label>
+                <label class="brush-label">
+                    Shift Y
+                    <input id="origin-y" type="number" step="0.01" value="0">
+                </label>
+                <label class="brush-label">
+                    Map Yaw
+                    <input id="origin-yaw" type="number" step="0.01" value="0">
+                </label>
+                <button class="tool-btn" id="origin-apply">Apply</button>
+                <button class="tool-btn" id="origin-reset">Recenter</button>
+            </div>
+            <div class="tool-group">
+                <label class="brush-label">
+                    Brush
+                    <input id="brush" type="range" min="2" max="60" value="14">
+                </label>
+                <span id="brush-value" class="brush-value">14</span>
+                <button class="tool-btn" id="undo-btn">Undo</button>
+            </div>
+            <div class="tool-group hint">Move Origin drags origin marker. Shift X/Y moves map image.</div>
+        </header>
+
+        <main class="canvas-wrap">
+            <canvas id="editor"></canvas>
+            <div class="status" id="status">Loading map...</div>
+        </main>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("editor");
+        const ctx = canvas.getContext("2d");
+        const brushSlider = document.getElementById("brush");
+        const brushValue = document.getElementById("brush-value");
+        const statusEl = document.getElementById("status");
+        const originXInput = document.getElementById("origin-x");
+        const originYInput = document.getElementById("origin-y");
+        const originYawInput = document.getElementById("origin-yaw");
+        const originApplyBtn = document.getElementById("origin-apply");
+        const originResetBtn = document.getElementById("origin-reset");
+        const undoBtn = document.getElementById("undo-btn");
+        const layoutChip = document.getElementById("layout-chip");
+        const moveOriginToggle = document.getElementById("move-origin-toggle");
+
+        const API = {
+            map: "/api/map",
+            stopStack: "/api/stack/mode",
+            robotPose: "/api/robot/pose",
+            overwrite: "/api/editor/map/overwrite",
+            zones: "/api/zones",
+            zoneUpdate: "/api/zones/update",
+            paths: "/api/paths",
+            pathSave: "/api/path/save",
+            layouts: "/api/layouts"
+        };
+
+        const editCanvas = document.createElement("canvas");
+        const editCtx = editCanvas.getContext("2d");
+
+        const state = {
+            tool: "add",
+            brush: Number(brushSlider.value),
+            pointerDown: false,
+            dragStart: null,
+            startYaw: 0,
+            startOriginPx: 0,
+            startOriginPy: 0,
+            mapInfo: null,
+            origin: { x: 0, y: 0, yaw: 0 },
+            originPx: 0,
+            originPy: 0,
+            initialOrigin: { x: 0, y: 0, yaw: 0 },
+            robotPose: null,
+            saveTimer: null,
+            mapReady: false,
+            zones: new Map(),
+            paths: new Map(),
+            draggingZoneId: null,
+            dragOffsetMap: null,
+            pendingFromZone: null,
+            undoStack: [],
+            strokeSnapshot: null,
+            draggingOrigin: false,
+            rotatingZoneId: null,
+            rotateStartYaw: 0,
+            rotateStartAngle: 0,
+            currentLayout: null,
+            moveOriginEnabled: false
+        };
+
+        function updateStatus(text) {
+            statusEl.textContent = text;
+        }
+
+        function setLayoutStatus(name) {
+            if (name) {
+                layoutChip.textContent = `Layout: ${name}`;
+                layoutChip.classList.remove("is-empty");
+            } else {
+                layoutChip.textContent = "Layout: none";
+                layoutChip.classList.add("is-empty");
+            }
+        }
+
+        function setTool(tool) {
+            if ((tool === "move_zone" || tool === "rotate_zone" || tool === "add_path") && !state.currentLayout) {
+                updateStatus("Load a layout to edit zones/paths");
+                return;
+            }
+            state.tool = tool;
+            document.querySelectorAll(".tool-btn[data-tool]").forEach(btn => {
+                btn.classList.toggle("active", btn.dataset.tool === tool);
+            });
+            updateStatus(`Tool: ${tool}`);
+        }
+
+        document.querySelectorAll("#toolbar button[data-tool]").forEach(btn => {
+            btn.addEventListener("click", () => setTool(btn.dataset.tool));
+        });
+
+        moveOriginToggle.addEventListener("click", () => {
+            state.moveOriginEnabled = !state.moveOriginEnabled;
+            moveOriginToggle.classList.toggle("active", state.moveOriginEnabled);
+            updateStatus(state.moveOriginEnabled ? "Move Origin enabled" : "Move Origin disabled");
+        });
+
+        brushSlider.addEventListener("input", () => {
+            state.brush = Number(brushSlider.value);
+            brushValue.textContent = String(state.brush);
+        });
+
+        undoBtn.addEventListener("click", () => {
+            if (!state.mapReady || state.undoStack.length === 0) {
+                updateStatus("Nothing to undo");
+                return;
+            }
+            const snapshot = state.undoStack.pop();
+            editCtx.putImageData(snapshot, 0, 0);
+            draw();
+            saveEdits("undo");
+        });
+
+        function syncOriginInputs() {
+            originXInput.value = "0.000";
+            originYInput.value = "0.000";
+            originYawInput.value = state.origin.yaw.toFixed(3);
+        }
+
+        function applyOriginInputs() {
+            const dx = Number(originXInput.value);
+            const dy = Number(originYInput.value);
+            const yaw = Number(originYawInput.value);
+
+            if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(yaw)) {
+                updateStatus("Invalid map shift values");
+                return;
+            }
+
+            if (dx !== 0 || dy !== 0) {
+                translateMapImage(dx, dy);
+            }
+
+            state.origin.yaw = yaw;
+            draw();
+            saveEdits("map-shift");
+            syncOriginInputs();
+        }
+
+        originApplyBtn.addEventListener("click", applyOriginInputs);
+        originResetBtn.addEventListener("click", () => {
+            state.origin = { ...state.initialOrigin };
+            updateOriginPixel();
+            syncOriginInputs();
+            draw();
+            saveEdits("recenter");
+        });
+
+        function rotatePoint(x, y, angle, ox, oy) {
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            const dx = x - ox;
+            const dy = y - oy;
+            return {
+                x: ox + dx * cos - dy * sin,
+                y: oy + dx * sin + dy * cos
+            };
+        }
+
+        function updateOriginPixel() {
+            const res = state.mapInfo.resolution;
+            const height = editCanvas.height;
+            state.originPx = (0 - state.origin.x) / res;
+            state.originPy = height - (0 - state.origin.y) / res;
+        }
+
+        function updateOriginFromPixel(px, py) {
+            const res = state.mapInfo.resolution;
+            const height = editCanvas.height;
+            state.origin.x = -px * res;
+            state.origin.y = (py - height) * res;
+        }
+
+        function mapPixelToCanvas(x, y) {
+            return rotatePoint(x, y, state.origin.yaw, state.originPx, state.originPy);
+        }
+
+        function canvasToMapPixel(x, y) {
+            return rotatePoint(x, y, -state.origin.yaw, state.originPx, state.originPy);
+        }
+
+        function worldToMapPixel(wx, wy) {
+            const res = state.mapInfo.resolution;
+            const px = (wx - state.origin.x) / res;
+            const py = editCanvas.height - (wy - state.origin.y) / res;
+            return { x: px, y: py };
+        }
+
+        function mapPixelToWorld(px, py) {
+            const res = state.mapInfo.resolution;
+            const wx = state.origin.x + px * res;
+            const wy = state.origin.y + (editCanvas.height - py) * res;
+            return { x: wx, y: wy };
+        }
+
+        function drawAxes(px, py, angle, size, label) {
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            const xEnd = { x: px + size * cos, y: py + size * sin };
+            const yEnd = { x: px - size * sin, y: py + size * cos };
+
+            ctx.save();
+            ctx.lineWidth = 2;
+
+            ctx.strokeStyle = "#ff5252";
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(xEnd.x, xEnd.y);
+            ctx.stroke();
+
+            ctx.strokeStyle = "#00e676";
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(yEnd.x, yEnd.y);
+            ctx.stroke();
+
+            ctx.fillStyle = "#ff5252";
+            ctx.fillRect(xEnd.x - 2, xEnd.y - 2, 4, 4);
+            ctx.fillStyle = "#00e676";
+            ctx.fillRect(yEnd.x - 2, yEnd.y - 2, 4, 4);
+
+            if (label) {
+                ctx.fillStyle = "rgba(0,0,0,0.7)";
+                ctx.strokeStyle = "#ffffff";
+                ctx.lineWidth = 1;
+                const textWidth = ctx.measureText(label).width;
+                ctx.fillRect(px - textWidth / 2 - 4, py - 22, textWidth + 8, 16);
+                ctx.strokeRect(px - textWidth / 2 - 4, py - 22, textWidth + 8, 16);
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 11px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(label, px, py - 10);
+            }
+            ctx.restore();
+        }
+
+        function draw() {
+            if (!state.mapReady) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(state.originPx, state.originPy);
+            ctx.rotate(state.origin.yaw);
+            ctx.translate(-state.originPx, -state.originPy);
+            ctx.drawImage(editCanvas, 0, 0);
+            ctx.restore();
+
+            drawPaths();
+            drawZones();
+
+            const originCanvas = mapPixelToCanvas(state.originPx, state.originPy);
+            drawAxes(originCanvas.x, originCanvas.y, 0, 20, "origin");
+
+            if (state.robotPose) {
+                const mapPixel = worldToMapPixel(state.robotPose.x, state.robotPose.y);
+                const robotCanvas = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                drawAxes(robotCanvas.x, robotCanvas.y, -state.robotPose.theta, 18, "robot");
+            }
+        }
+
+        function drawZones() {
+            ctx.save();
+            ctx.lineWidth = 2;
+            state.zones.forEach(zone => {
+                const mapPixel = worldToMapPixel(zone.x, zone.y);
+                const canvasPos = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                const radius = zone.radius_m ? (zone.radius_m / state.mapInfo.resolution) : 12;
+
+                ctx.beginPath();
+                ctx.fillStyle = "rgba(46, 125, 50, 0.25)";
+                ctx.strokeStyle = "#69f0ae";
+                ctx.arc(canvasPos.x, canvasPos.y, Math.max(10, radius), 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                if (Number.isFinite(zone.yaw)) {
+                    const heading = -zone.yaw;
+                    const hx = canvasPos.x + Math.cos(heading) * (Math.max(10, radius) + 8);
+                    const hy = canvasPos.y + Math.sin(heading) * (Math.max(10, radius) + 8);
+                    ctx.strokeStyle = "#ffee58";
+                    ctx.beginPath();
+                    ctx.moveTo(canvasPos.x, canvasPos.y);
+                    ctx.lineTo(hx, hy);
+                    ctx.stroke();
+                }
+
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 12px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(zone.name || zone.id, canvasPos.x, canvasPos.y - 14);
+            });
+            ctx.restore();
+        }
+
+        function drawPaths() {
+            ctx.save();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#4fc3f7";
+            ctx.setLineDash([6, 4]);
+
+            state.paths.forEach((path, pathId) => {
+                const pts = getRenderablePathPoints(pathId, path);
+                if (!pts || pts.length < 2) return;
+                ctx.beginPath();
+                pts.forEach((pt, idx) => {
+                    const mapPixel = worldToMapPixel(pt.x, pt.y);
+                    const canvasPos = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                    if (idx === 0) {
+                        ctx.moveTo(canvasPos.x, canvasPos.y);
+                    } else {
+                        ctx.lineTo(canvasPos.x, canvasPos.y);
+                    }
+                });
+                ctx.stroke();
+            });
+
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+
+        function getRenderablePathPoints(pathId, path) {
+            const pts = Array.isArray(path.points) ? path.points.map(p => ({ x: p.x, y: p.y })) : [];
+            if (pts.length < 2) return pts;
+
+            if (pathId.includes("__")) {
+                const parts = pathId.split("__");
+                const from = state.zones.get(parts[0]);
+                const to = state.zones.get(parts[1]);
+                if (from && to) {
+                    pts[0] = { x: from.x, y: from.y };
+                    pts[pts.length - 1] = { x: to.x, y: to.y };
+                }
+            }
+            return pts;
+        }
+
+        function paintCircle(x, y, erase = false) {
+            editCtx.save();
+            editCtx.beginPath();
+            editCtx.arc(x, y, state.brush, 0, Math.PI * 2);
+            if (erase) {
+                editCtx.fillStyle = "#ffffff";
+            } else {
+                editCtx.fillStyle = "#000000";
+            }
+            editCtx.fill();
+            editCtx.restore();
+        }
+
+        function translateMapImage(dxMeters, dyMeters) {
+            if (!state.mapInfo) return;
+            const dxPx = dxMeters / state.mapInfo.resolution;
+            const dyPx = -dyMeters / state.mapInfo.resolution;
+            const temp = document.createElement("canvas");
+            temp.width = editCanvas.width;
+            temp.height = editCanvas.height;
+            const tctx = temp.getContext("2d");
+            tctx.fillStyle = "#ffffff";
+            tctx.fillRect(0, 0, temp.width, temp.height);
+            tctx.drawImage(editCanvas, dxPx, dyPx);
+            editCtx.clearRect(0, 0, editCanvas.width, editCanvas.height);
+            editCtx.drawImage(temp, 0, 0);
+        }
+
+        function saveEdits(reason) {
+            if (!state.mapReady) return;
+            if (state.saveTimer) clearTimeout(state.saveTimer);
+
+            state.saveTimer = setTimeout(async () => {
+                try {
+                    updateStatus("Saving...");
+                    const image = editCanvas.toDataURL("image/png");
+                    const origin = [state.origin.x, state.origin.y, state.origin.yaw];
+                    const resp = await fetch(API.overwrite, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ image, origin })
+                    });
+                    const data = await resp.json();
+                    if (data.ok) {
+                        updateStatus(`Saved (${reason})`);
+                    } else {
+                        updateStatus(data.message || "Save failed");
+                    }
+                } catch (err) {
+                    updateStatus("Save error");
+                }
+            }, 250);
+        }
+
+        function getPos(e) {
+            const r = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / r.width;
+            const scaleY = canvas.height / r.height;
+            return {
+                x: (e.clientX - r.left) * scaleX,
+                y: (e.clientY - r.top) * scaleY
+            };
+        }
+
+        canvas.addEventListener("pointerdown", (e) => {
+            if (!state.mapReady) return;
+            canvas.setPointerCapture(e.pointerId);
+            state.pointerDown = true;
+            const p = getPos(e);
+            const mapPos = canvasToMapPixel(p.x, p.y);
+
+            if (state.moveOriginEnabled) {
+                const originCanvas = mapPixelToCanvas(state.originPx, state.originPy);
+                const dx = p.x - originCanvas.x;
+                const dy = p.y - originCanvas.y;
+                if (dx * dx + dy * dy <= 18 * 18) {
+                    state.draggingOrigin = true;
+                    updateStatus("Moving origin");
+                    return;
+                }
+            }
+
+            if (state.tool === "move_zone") {
+                const hit = hitTestZone(p.x, p.y);
+                if (!hit) return;
+                state.draggingZoneId = hit.id;
+                const worldPos = mapPixelToWorld(mapPos.x, mapPos.y);
+                state.dragOffsetMap = {
+                    x: hit.x - worldPos.x,
+                    y: hit.y - worldPos.y
+                };
+                updateStatus(`Moving ${hit.name || hit.id}`);
+                return;
+            }
+
+            if (state.tool === "rotate_zone") {
+                const hit = hitTestZone(p.x, p.y);
+                if (!hit) return;
+                const mapPixel = worldToMapPixel(hit.x, hit.y);
+                const canvasPos = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                state.rotatingZoneId = hit.id;
+                state.rotateStartYaw = hit.yaw || 0;
+                state.rotateStartAngle = Math.atan2(p.y - canvasPos.y, p.x - canvasPos.x);
+                updateStatus(`Rotating ${hit.name || hit.id}`);
+                return;
+            }
+
+            if (state.tool === "add_path") {
+                const hit = hitTestZone(p.x, p.y);
+                if (!hit) return;
+                if (!state.pendingFromZone) {
+                    state.pendingFromZone = hit.id;
+                    updateStatus(`Path from ${hit.name || hit.id}...`);
+                } else if (state.pendingFromZone !== hit.id) {
+                    createPathBetween(state.pendingFromZone, hit.id);
+                    state.pendingFromZone = null;
+                }
+                draw();
+                return;
+            }
+
+            if (state.tool === "add" || state.tool === "erase") {
+                state.strokeSnapshot = editCtx.getImageData(0, 0, editCanvas.width, editCanvas.height);
+                paintCircle(mapPos.x, mapPos.y, state.tool === "erase");
+                draw();
+            }
+        });
+
+        canvas.addEventListener("pointermove", (e) => {
+            if (!state.pointerDown || !state.mapReady) return;
+            const p = getPos(e);
+            const mapPos = canvasToMapPixel(p.x, p.y);
+
+            if (state.moveOriginEnabled && state.draggingOrigin) {
+                state.originPx = mapPos.x;
+                state.originPy = mapPos.y;
+                updateOriginFromPixel(state.originPx, state.originPy);
+                syncOriginInputs();
+                draw();
+                return;
+            }
+
+            if (state.tool === "move_zone" && state.draggingZoneId) {
+                const worldPos = mapPixelToWorld(mapPos.x, mapPos.y);
+                const zone = state.zones.get(state.draggingZoneId);
+                if (zone) {
+                    zone.x = worldPos.x + state.dragOffsetMap.x;
+                    zone.y = worldPos.y + state.dragOffsetMap.y;
+                    draw();
+                }
+                return;
+            }
+
+            if (state.tool === "rotate_zone" && state.rotatingZoneId) {
+                const zone = state.zones.get(state.rotatingZoneId);
+                if (zone) {
+                    const mapPixel = worldToMapPixel(zone.x, zone.y);
+                    const canvasPos = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                    const angle = Math.atan2(p.y - canvasPos.y, p.x - canvasPos.x);
+                    zone.yaw = state.rotateStartYaw + (angle - state.rotateStartAngle);
+                    draw();
+                }
+                return;
+            }
+
+            if (state.tool === "add" || state.tool === "erase") {
+                if (!state.strokeSnapshot) {
+                    state.strokeSnapshot = editCtx.getImageData(0, 0, editCanvas.width, editCanvas.height);
+                }
+                paintCircle(mapPos.x, mapPos.y, state.tool === "erase");
+                draw();
+                return;
+            }
+
+            return;
+        });
+
+        function finishPointer(e) {
+            if (!state.pointerDown) return;
+            state.pointerDown = false;
+            state.dragStart = null;
+            if (e && typeof e.pointerId === "number") {
+                try {
+                    if (canvas.hasPointerCapture(e.pointerId)) {
+                        canvas.releasePointerCapture(e.pointerId);
+                    }
+                } catch (err) {
+                    // ignore
+                }
+            }
+
+            if (state.moveOriginEnabled && state.draggingOrigin) {
+                state.draggingOrigin = false;
+                saveEdits("origin-drag");
+                return;
+            }
+
+            if (state.tool === "move_zone" && state.draggingZoneId) {
+                const zone = state.zones.get(state.draggingZoneId);
+                const movedId = state.draggingZoneId;
+                state.draggingZoneId = null;
+                state.dragOffsetMap = null;
+                if (zone) {
+                    updateZonePose(zone);
+                    updateAttachedPaths(movedId);
+                }
+                state.pointerDown = false;
+                return;
+            }
+
+            if (state.tool === "rotate_zone" && state.rotatingZoneId) {
+                const zone = state.zones.get(state.rotatingZoneId);
+                state.rotatingZoneId = null;
+                if (zone) {
+                    updateZonePose(zone);
+                }
+                state.pointerDown = false;
+                return;
+            }
+
+            if (state.tool === "add" || state.tool === "erase") {
+                if (state.strokeSnapshot) {
+                    state.undoStack.push(state.strokeSnapshot);
+                    state.strokeSnapshot = null;
+                }
+                saveEdits(state.tool);
+            }
+
+        }
+
+        canvas.addEventListener("pointerup", finishPointer);
+        canvas.addEventListener("pointercancel", finishPointer);
+        canvas.addEventListener("pointerleave", finishPointer);
+        window.addEventListener("pointerup", finishPointer);
+
+        async function stopStacks() {
+            try {
+                await fetch(API.stopStack, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mode: "stop" })
+                });
+            } catch (e) {
+                updateStatus("Stack stop failed");
+            }
+        }
+
+        async function loadMap() {
+            const resp = await fetch(API.map);
+            const data = await resp.json();
+            if (!data.image) {
+                updateStatus("Map load failed");
+                return;
+            }
+
+            state.mapInfo = {
+                resolution: data.resolution,
+                origin: data.origin,
+                width: data.width,
+                height: data.height,
+                negate: data.negate || 0
+            };
+
+            state.origin = {
+                x: data.origin[0] || 0,
+                y: data.origin[1] || 0,
+                yaw: data.origin[2] || 0
+            };
+            state.initialOrigin = { ...state.origin };
+
+            const img = new Image();
+            img.onload = () => {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                editCanvas.width = img.width;
+                editCanvas.height = img.height;
+                editCtx.drawImage(img, 0, 0);
+                updateOriginPixel();
+                state.mapReady = true;
+                syncOriginInputs();
+                updateStatus("Map loaded");
+                draw();
+            };
+            img.src = `data:image/png;base64,${data.image}`;
+        }
+
+        async function loadZones() {
+            try {
+                const resp = await fetch(API.zones);
+                const data = await resp.json();
+                const zones = data.zones || {};
+                state.zones.clear();
+                Object.entries(zones).forEach(([name, zone]) => {
+                    let x = Number(zone.x);
+                    let y = Number(zone.y);
+                    let yaw = Number(zone.theta);
+                    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                        if (zone.position) {
+                            x = Number(zone.position.x);
+                            y = Number(zone.position.y);
+                        }
+                    }
+                    if (!Number.isFinite(yaw) && zone.orientation) {
+                        const q = zone.orientation;
+                        const siny = 2.0 * (q.w * q.z + q.x * q.y);
+                        const cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+                        yaw = Math.atan2(siny, cosy);
+                    }
+                    state.zones.set(name, {
+                        id: name,
+                        name: zone.name || name,
+                        x: Number.isFinite(x) ? x : 0,
+                        y: Number.isFinite(y) ? y : 0,
+                        yaw: Number.isFinite(yaw) ? yaw : 0,
+                        radius_m: Number(zone.radius_m) || 0
+                    });
+                });
+                draw();
+            } catch (e) {
+                updateStatus("Zones load failed");
+            }
+        }
+
+        async function loadPaths() {
+            try {
+                const resp = await fetch(API.paths);
+                const data = await resp.json();
+                const paths = data.paths || {};
+                state.paths.clear();
+                Object.entries(paths).forEach(([name, points]) => {
+                    state.paths.set(name, {
+                        id: name,
+                        points: Array.isArray(points) ? points : []
+                    });
+                });
+                draw();
+            } catch (e) {
+                updateStatus("Paths load failed");
+            }
+        }
+
+        async function loadLayoutInfo() {
+            try {
+                const resp = await fetch(API.layouts);
+                const data = await resp.json();
+                state.currentLayout = data.current || null;
+                setLayoutStatus(state.currentLayout);
+                if (!state.currentLayout) {
+                    updateStatus("No layout loaded - zones/paths disabled");
+                }
+            } catch (e) {
+                state.currentLayout = null;
+                setLayoutStatus(null);
+                updateStatus("Layout info unavailable");
+            }
+        }
+
+        async function updateZonePose(zone) {
+            try {
+                const resp = await fetch(API.zoneUpdate, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        name: zone.id,
+                        x: zone.x,
+                        y: zone.y,
+                        theta: zone.yaw || 0
+                    })
+                });
+                const data = await resp.json();
+                if (data.ok === false) {
+                    updateStatus(data.message || "Zone update failed");
+                } else {
+                    updateStatus(`Zone ${zone.name || zone.id} updated`);
+                }
+            } catch (e) {
+                updateStatus("Zone update failed");
+            }
+        }
+
+        async function savePathToRos(pathId, points) {
+            try {
+                const resp = await fetch(API.pathSave, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        name: pathId,
+                        path: points
+                    })
+                });
+                const data = await resp.json();
+                if (data.ok === false) {
+                    updateStatus(data.message || "Path save failed");
+                } else {
+                    updateStatus(`Path ${pathId} saved`);
+                }
+            } catch (e) {
+                updateStatus("Path save failed");
+            }
+        }
+
+        function updateAttachedPaths(zoneId) {
+            state.paths.forEach((path, pathId) => {
+                const parts = pathId.split("__");
+                if (parts.length !== 2) return;
+                if (parts[0] !== zoneId && parts[1] !== zoneId) return;
+                const pts = getRenderablePathPoints(pathId, path);
+                if (pts && pts.length >= 2) {
+                    path.points = pts.map(p => ({ x: p.x, y: p.y }));
+                    savePathToRos(pathId, path.points);
+                }
+            });
+        }
+
+        function hitTestZone(px, py, pickRadius = 18) {
+            let best = null;
+            let bestD2 = Infinity;
+            state.zones.forEach(zone => {
+                const mapPixel = worldToMapPixel(zone.x, zone.y);
+                const canvasPos = mapPixelToCanvas(mapPixel.x, mapPixel.y);
+                const dx = px - canvasPos.x;
+                const dy = py - canvasPos.y;
+                const d2 = dx * dx + dy * dy;
+                if (d2 < bestD2 && d2 < pickRadius * pickRadius) {
+                    bestD2 = d2;
+                    best = zone;
+                }
+            });
+            return best;
+        }
+
+        function createPathBetween(fromId, toId) {
+            const from = state.zones.get(fromId);
+            const to = state.zones.get(toId);
+            if (!from || !to) return;
+
+            const pathId = `${fromId}__${toId}`;
+            const points = [
+                { x: from.x, y: from.y },
+                { x: to.x, y: to.y }
+            ];
+            state.paths.set(pathId, { id: pathId, points });
+            savePathToRos(pathId, points);
+            updateStatus(`Path ${fromId} -> ${toId}`);
+            draw();
+        }
+
+        async function refreshRobotPose() {
+            try {
+                const resp = await fetch(API.robotPose);
+                const data = await resp.json();
+                if (data && data.pose) {
+                    state.robotPose = data.pose;
+                    draw();
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        async function init() {
+            await stopStacks();
+            await loadMap();
+            await loadLayoutInfo();
+            await loadZones();
+            await loadPaths();
+            setTool("add");
+            setInterval(refreshRobotPose, 1000);
+            setInterval(() => {
+                loadLayoutInfo();
+                loadZones();
+                loadPaths();
+            }, 5000);
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -65,7 +65,7 @@
     <gazebo reference="laser_frame">
         <material>Gazebo/Black</material>
         <sensor name="laser" type="ray">
-            <pose> 0 0 0 0 0 3.14 </pose>
+            <pose>0 0 0 0 0 0</pose>
             <visualize>true</visualize>
             <update_rate>10</update_rate>
             <ray>
@@ -94,7 +94,7 @@
     <gazebo reference="laser_frame2">
         <material>Gazebo/Black</material>
         <sensor name="laser2" type="ray">
-            <pose> 0 0 0 0 0 3.14 </pose>
+            <pose>0 0 0 0 0 0</pose>
             <visualize>true</visualize>
             <update_rate>10</update_rate>
             <ray>

@@ -1,0 +1,10 @@
+free_thresh: 0.25
+image: newmap.pgm
+mode: trinary
+negate: 0
+occupied_thresh: 0.65
+origin:
+- -6.192
+- -10.744
+- 0.0
+resolution: 0.05
