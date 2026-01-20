@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>zone_nav_interfaces</name>
+  <name>next_ros2ws_interfaces</name>
   <version>0.0.0</version>
   <description>Service interfaces for zone navigation</description>
   <maintainer email="prabalkhareofficial@gmail.com">prabal</maintainer>

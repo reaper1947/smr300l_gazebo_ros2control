@@ -12,7 +12,7 @@ except ImportError:
 
 import rclpy
 from rclpy.node import Node
-from zone_nav_interfaces.srv import SetStackMode
+from next_ros2ws_interfaces.srv import SetStackMode
 
 
 class StackManager(Node):

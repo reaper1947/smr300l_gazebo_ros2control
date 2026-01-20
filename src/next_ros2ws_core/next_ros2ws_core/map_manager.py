@@ -9,7 +9,7 @@ Centralized service for managing maps across the entire system.
 
 import rclpy
 from rclpy.node import Node
-from zone_nav_interfaces.srv import UploadMap, SetActiveMap, GetActiveMap
+from next_ros2ws_interfaces.srv import UploadMap, SetActiveMap, GetActiveMap
 import os
 import yaml
 import base64

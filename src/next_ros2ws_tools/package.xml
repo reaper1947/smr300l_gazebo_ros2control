@@ -1,17 +1,11 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>zone_nav</name>
+  <name>next_ros2ws_tools</name>
   <version>0.0.0</version>
-  <description>Zone navigation package with custom service interfaces</description>
-  <maintainer email="s6403014621116@email.kmutnb.ac.th">aun</maintainer>
+  <description>TODO: Package description</description>
+  <maintainer email="prabalkhareofficial@gmail.com">aun</maintainer>
   <license>TODO: License declaration</license>
-
-  <depend>rclpy</depend>
-  <depend>geometry_msgs</depend>
-  <depend>nav2_msgs</depend>
-  <depend>action_msgs</depend>
-  <depend>zone_nav_interfaces</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

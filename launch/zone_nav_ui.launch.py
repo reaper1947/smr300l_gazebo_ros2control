@@ -15,7 +15,7 @@ def generate_launch_description():
         
         # Zone manager node
         Node(
-            package='zone_nav',
+            package='next_ros2ws_core',
             executable='zone_manager',
             name='zone_manager',
             output='screen',
@@ -26,7 +26,7 @@ def generate_launch_description():
         
         # Safety controller node - monitors obstacles and localization
         Node(
-            package='zone_nav',
+            package='next_ros2ws_core',
             executable='safety_controller',
             name='safety_controller',
             output='screen',
@@ -37,7 +37,7 @@ def generate_launch_description():
         
         # Scan merger node - combines /scan + /scan2 for AMCL
         Node(
-            package='zone_nav',
+            package='next_ros2ws_core',
             executable='scan_merger',
             name='scan_merger',
             output='screen',
@@ -48,7 +48,7 @@ def generate_launch_description():
         
         # Map manager node - centralized map management service
         Node(
-            package='zone_nav',
+            package='next_ros2ws_core',
             executable='map_manager',
             name='map_manager',
             output='screen',
@@ -59,7 +59,7 @@ def generate_launch_description():
         
         # Web UI node
         Node(
-            package='zone_nav',
+            package='next_ros2ws_web',
             executable='zone_web_ui',
             name='zone_web_ui',
             output='screen',
@@ -70,9 +70,9 @@ def generate_launch_description():
 
         # Zone publisher node - publishes keepout/speed filter info and masks
         Node(
-            package='zone_nav',
-            executable='zone_publisher',
-            name='zone_publisher',
+            package='next_ros2ws_core',
+            executable='keepout_zone_publisher',
+            name='keepout_zone_publisher',
             output='screen',
             parameters=[{
                 'use_sim_time': True

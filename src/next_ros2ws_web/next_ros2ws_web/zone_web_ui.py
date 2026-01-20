@@ -12,13 +12,13 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 from rclpy.clock import Clock, ClockType
 from rclpy.duration import Duration
 from rclpy.time import Time
-from zone_nav_interfaces.srv import (
+from next_ros2ws_interfaces.srv import (
     SaveZone, DeleteZone, UpdateZoneParams, ReorderZones,
     SavePath, DeletePath, SaveLayout, LoadLayout, DeleteLayout,
     SetMaxSpeed, SetControlMode, SetSafetyOverride, SetEStop,
     UploadMap, SetActiveMap, GetActiveMap
 )
-from zone_nav_interfaces.action import GoToZone as GoToZoneAction, FollowPath as FollowPathAction
+from next_ros2ws_interfaces.action import GoToZone as GoToZoneAction, FollowPath as FollowPathAction
 from nav2_msgs.action import NavigateToPose
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist, TransformStamped, PointStamped
 from nav_msgs.msg import Path
@@ -53,9 +53,9 @@ except ImportError:
 
 class ZoneWebServer(Node):
     def __init__(self, executor):
-        super().__init__('zone_web_server')
+        super().__init__('next_ros2ws_server')
         # Stack manager service client
-        from zone_nav_interfaces.srv import SetStackMode
+        from next_ros2ws_interfaces.srv import SetStackMode
         self.set_stack_mode_client = self.create_client(SetStackMode, '/stack/set_mode')
         self.current_stack_mode = 'stopped'
         # Store executor reference for thread-safe ROS calls from Flask
@@ -1936,8 +1936,8 @@ class ZoneWebServer(Node):
 
 # Create Flask app
 app = Flask(__name__, 
-            template_folder='/home/aun/Downloads/smr300l_gazebo_ros2control-main/src/zone_nav/zone_nav/web/templates',
-            static_folder='/home/aun/Downloads/smr300l_gazebo_ros2control-main/src/zone_nav/zone_nav/web/static')
+            template_folder='/home/aun/Downloads/smr300l_gazebo_ros2control-main/src/next_ros2ws_web/next_ros2ws_web/web/templates',
+            static_folder='/home/aun/Downloads/smr300l_gazebo_ros2control-main/src/next_ros2ws_web/next_ros2ws_web/web/static')
 CORS(app)
 
 # Global node reference
@@ -3231,87 +3231,93 @@ def run_flask():
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
 
+import os, signal, time
+
+REPO_DIR = "/home/aun/Downloads/smr300l_gazebo_ros2control-main"
+
 def cleanup_ros_processes():
-    """Kill all ROS-related processes when web UI shuts down"""
-    print("\n🧹 Cleaning up ROS processes...")
-    
-    # Patterns to match ROS-related process names
-    ros_process_patterns = [
-        'ros2', 'nav2', 'amcl', 'slam_toolbox', 'map_server',
-        'planner_server', 'controller_server', 'bt_navigator',
-        'behavior_server', 'lifecycle_manager', 'rviz2',
-        'gazebo', 'gzserver', 'gzclient'
-    ]
-    
-    killed_count = 0
-    
-    if PSUTIL_AVAILABLE:
+    print("\nCleaning up UI-launched ROS processes...")
+
+    if not PSUTIL_AVAILABLE:
+        print("psutil not available; can't do safe targeted cleanup.")
+        return
+
+    me = os.getpid()
+    killed = []
+
+    def looks_like_ours(proc):
         try:
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                try:
-                    proc_info = proc.info
-                    name = proc_info.get('name', '').lower()
-                    cmdline = ' '.join(proc_info.get('cmdline', [])).lower()
-                    
-                    # Check if process matches any ROS pattern
-                    matches = False
-                    for pattern in ros_process_patterns:
-                        if pattern in name or pattern in cmdline:
-                            # Skip our own process
-                            if proc.pid != os.getpid():
-                                matches = True
-                                break
-                    
-                    if matches:
-                        try:
-                            print(f"  Killing process {proc.pid}: {name}")
-                            proc.terminate()
-                            killed_count += 1
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            pass
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    continue
-            
-            # Wait for graceful shutdown
-            if killed_count > 0:
-                time.sleep(2)
-                
-                # Force kill any remaining
-                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                    try:
-                        proc_info = proc.info
-                        name = proc_info.get('name', '').lower()
-                        cmdline = ' '.join(proc_info.get('cmdline', [])).lower()
-                        
-                        for pattern in ros_process_patterns:
-                            if pattern in name or pattern in cmdline:
-                                if proc.pid != os.getpid():
-                                    try:
-                                        proc.kill()
-                                    except:
-                                        pass
-                                    break
-                    except:
-                        continue
-                        
-        except Exception as e:
-            print(f"  Error during cleanup: {e}")
-    else:
-        # Fallback: use pkill
+            env = proc.environ()
+        except Exception:
+            env = {}
+
         try:
-            for pattern in ros_process_patterns:
+            cmdline = " ".join(proc.cmdline()).lower()
+        except Exception:
+            cmdline = ""
+
+        # Target only UI-marked processes OR ones launched from your workspace
+        if env.get("ZONE_WEB_UI_STACK") == "1":
+            return True
+        if REPO_DIR.lower() in cmdline:
+            return True
+
+        # Extra allowlist for known “parents” IF they’re in your workspace cmdline
+        # (prevents killing unrelated system ROS)
+        if any(x in cmdline for x in ["ros2 launch", "launch.py", "gzserver", "gzclient", "ros2_control_node"]):
+            if REPO_DIR.lower() in cmdline:
+                return True
+
+        return False
+
+    # 1) terminate process groups first (prevents respawn)
+    for proc in psutil.process_iter(["pid", "name"]):
+        pid = proc.info["pid"]
+        if pid == me:
+            continue
+
+        try:
+            if not looks_like_ours(proc):
+                continue
+
+            # kill entire process group if possible
+            try:
+                pgid = os.getpgid(pid)
+                os.killpg(pgid, signal.SIGTERM)
+                killed.append(("TERM_PG", pid))
+            except Exception:
+                proc.terminate()
+                killed.append(("TERM", pid))
+
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    time.sleep(1.0)
+
+    # 2) escalate to SIGKILL for survivors
+    for proc in psutil.process_iter(["pid"]):
+        pid = proc.info["pid"]
+        if pid == me:
+            continue
+        try:
+            if not looks_like_ours(proc):
+                continue
+            if proc.is_running():
                 try:
-                    subprocess.run(['pkill', '-f', pattern], 
-                                 timeout=2, capture_output=True)
-                except:
-                    pass
-        except Exception as e:
-            print(f"  Error during cleanup: {e}")
-    
-    if killed_count > 0:
-        print(f"✓ Cleaned up {killed_count} ROS processes")
-    else:
-        print("  No ROS processes found to clean up")
+                    pgid = os.getpgid(pid)
+                    os.killpg(pgid, signal.SIGKILL)
+                    killed.append(("KILL_PG", pid))
+                except Exception:
+                    proc.kill()
+                    killed.append(("KILL", pid))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    # 3) refresh ROS CLI view (optional but helps)
+    # os.system("ros2 daemon stop >/dev/null 2>&1; ros2 daemon start >/dev/null 2>&1")
+
+    print(f"Cleanup attempted on {len(killed)} processes/groups.")
+
 
 
 def main(args=None):
@@ -3326,12 +3332,12 @@ def main(args=None):
     ros_node = ZoneWebServer(executor)
 
     # Import and create StackManager node
-    from .stack_manager import StackManager
+    from next_ros2ws_core.stack_manager import StackManager
     stack_manager_node = StackManager()
 
     auto_reloc_node = None
     try:
-        from .auto_reloc import CorrelativeRelocalizer
+        from next_ros2ws_tools.auto_reloc import CorrelativeRelocalizer
         auto_reloc_node = CorrelativeRelocalizer()
         ros_node.get_logger().info('Auto relocalizer started (/auto_relocate)')
     except Exception as e:
@@ -3390,7 +3396,7 @@ def set_stack_mode():
     if mode not in ['nav', 'slam', 'stop']:
         return jsonify({'ok': False, 'message': 'Invalid mode'}), 400
 
-    from zone_nav_interfaces.srv import SetStackMode
+    from next_ros2ws_interfaces.srv import SetStackMode
     if not ros_node.set_stack_mode_client.wait_for_service(timeout_sec=2.0):
         return jsonify({'ok': False, 'message': 'StackManager service not available'}), 500
 

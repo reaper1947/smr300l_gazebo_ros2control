@@ -5,7 +5,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package='zone_nav',
+            package='next_ros2ws_core',
             executable='safety_controller',
             name='safety_controller',
             output='screen',

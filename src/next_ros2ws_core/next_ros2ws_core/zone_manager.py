@@ -3,12 +3,12 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
-from zone_nav_interfaces.srv import (
+from next_ros2ws_interfaces.srv import (
     SaveZone, DeleteZone, UpdateZoneParams, ReorderZones,
     SavePath, DeletePath, SaveLayout, LoadLayout, DeleteLayout,
     SetMaxSpeed, SetControlMode, SetSafetyOverride, SetEStop
 )
-from zone_nav_interfaces.action import GoToZone as GoToZoneAction, FollowPath as FollowPathAction
+from next_ros2ws_interfaces.action import GoToZone as GoToZoneAction, FollowPath as FollowPathAction
 from nav2_msgs.action import NavigateToPose
 from action_msgs.msg import GoalStatus
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
@@ -127,7 +127,7 @@ class ZoneManager(Node):
             cancel_callback=self.follow_path_cancel_callback
         )
 
-        self.go_to_zone_nav_goal = None
+        self.go_to_next_ros2ws_goal = None
         self.follow_path_nav_goal = None
         
         # Store zones in memory and file
@@ -209,9 +209,9 @@ class ZoneManager(Node):
         return GoalResponse.ACCEPT
 
     def go_to_zone_cancel_callback(self, goal_handle):
-        if self.go_to_zone_nav_goal is not None:
+        if self.go_to_next_ros2ws_goal is not None:
             try:
-                self.go_to_zone_nav_goal.cancel_goal_async()
+                self.go_to_next_ros2ws_goal.cancel_goal_async()
             except Exception as e:
                 self.get_logger().error(f'Failed to cancel Nav2 goal for GoToZone: {e}')
         return CancelResponse.ACCEPT
@@ -273,7 +273,7 @@ class ZoneManager(Node):
             goal_handle.abort()
             return result
 
-        self.go_to_zone_nav_goal = nav_goal_handle
+        self.go_to_next_ros2ws_goal = nav_goal_handle
         nav_result = await nav_goal_handle.get_result_async()
 
         # Check cancel first
@@ -293,7 +293,7 @@ class ZoneManager(Node):
             result.success = False
             result.message = f'Nav2 failed with status {nav_result.status}'
 
-        self.go_to_zone_nav_goal = None
+        self.go_to_next_ros2ws_goal = None
         return result
 
     def follow_path_goal_callback(self, goal_request):
@@ -306,7 +306,7 @@ class ZoneManager(Node):
             self.get_logger().warn('Rejecting follow_path goal: no waypoints provided')
             return GoalResponse.REJECT
 
-        if self.go_to_zone_nav_goal is not None:
+        if self.go_to_next_ros2ws_goal is not None:
             self.get_logger().warn('Rejecting follow_path goal: go_to_zone is in progress')
             return GoalResponse.REJECT
 

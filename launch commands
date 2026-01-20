@@ -34,3 +34,9 @@ pkill -KILL -u "$USER" -f "(/opt/ros/|ros2|launch.py|robot_state_publisher|rviz2
 
 
 ros2 run rosbridge_server rosbridge_websocket
+
+
+ros2 daemon stop
+pkill -f ros2daemon || true
+ros2 daemon start
+ros2 node list
