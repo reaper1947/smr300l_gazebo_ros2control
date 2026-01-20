@@ -30,6 +30,7 @@ setup(
             'zone_publisher = zone_nav.keepout_zone_publisher:main',
             'keepout_zone_publisher = zone_nav.keepout_zone_publisher:main',
             'map_manager = zone_nav.map_manager:main',
+            'auto_reloc = zone_nav.auto_reloc:main',
         ],
     },
 )

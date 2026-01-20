@@ -3,6 +3,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import String
 from std_srvs.srv import Trigger, SetBool
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 import math
@@ -30,6 +31,10 @@ class SafetyController(Node):
         self.low_confidence_stop = False
         self.obstacle_stop = False
         self.manual_override = False
+        self.control_mode = 'unknown'
+        self.lenient_mode = False
+        self.lenient_in_manual = bool(self.declare_parameter('lenient_in_manual', True).value)
+        self.lenient_scale = float(self.declare_parameter('slam_lenient_scale', 0.1).value)
         
         # Localization tracking
         self.localization_confidence = 100.0
@@ -38,9 +43,12 @@ class SafetyController(Node):
         
         # Obstacle detection - using research-based distance thresholds
         # Paper: "Detection and Classification of Obstacles Using a 2D LiDAR Sensor"
-        self.critical_zone = 0.35   # < 0.35m = CRITICAL - immediate stop
-        self.warning_zone = 0.60    # 0.35-0.60m = WARNING - slow down
-        self.safe_zone = 1.0        # 0.60-1.0m = SAFE - monitor
+        self.base_critical_zone = 0.35   # < 0.35m = CRITICAL - immediate stop
+        self.base_warning_zone = 0.60    # 0.35-0.60m = WARNING - slow down
+        self.base_safe_zone = 1.0        # 0.60-1.0m = SAFE - monitor
+        self.critical_zone = self.base_critical_zone
+        self.warning_zone = self.base_warning_zone
+        self.safe_zone = self.base_safe_zone
         
         self.min_obstacle_distance_front = float('inf')
         self.min_obstacle_distance_rear = float('inf')
@@ -77,6 +85,14 @@ class SafetyController(Node):
             self.scan_rear_callback,
             10
         )
+
+        # Track control mode to optionally relax safety during manual/SLAM mapping
+        self.control_mode_sub = self.create_subscription(
+            String,
+            '/control_mode',
+            self.control_mode_callback,
+            10
+        )
         
         self.get_logger().info('📡 Monitoring FRONT lidar: /scan')
         self.get_logger().info('📡 Monitoring REAR lidar: /scan2')
@@ -91,6 +107,48 @@ class SafetyController(Node):
         
         self.get_logger().info('🛡️  Safety Controller active - monitoring robot safety')
         self.get_logger().info('Services: safety/emergency_stop, safety/override, safety/status')
+
+    def _apply_lenient_zones(self):
+        scale = float(self.lenient_scale)
+        if scale <= 0.0:
+            scale = 0.1
+        elif scale > 1.0:
+            scale = 1.0
+
+        if self.lenient_mode:
+            self.critical_zone = self.base_critical_zone * scale
+            self.warning_zone = self.base_warning_zone * scale
+            self.safe_zone = self.base_safe_zone * scale
+        else:
+            self.critical_zone = self.base_critical_zone
+            self.warning_zone = self.base_warning_zone
+            self.safe_zone = self.base_safe_zone
+
+    def _set_lenient_mode(self, enabled, reason=''):
+        enabled = bool(enabled)
+        if enabled == self.lenient_mode:
+            return
+        self.lenient_mode = enabled
+        self._apply_lenient_zones()
+        suffix = f' ({reason})' if reason else ''
+        if enabled:
+            self.get_logger().warn(
+                f'Safety leniency enabled{suffix}: '
+                f'critical<{self.critical_zone:.2f}m, warning<{self.warning_zone:.2f}m'
+            )
+        else:
+            self.get_logger().info(
+                f'Safety leniency disabled{suffix}: '
+                f'critical<{self.critical_zone:.2f}m, warning<{self.warning_zone:.2f}m'
+            )
+
+    def control_mode_callback(self, msg):
+        mode = (msg.data or '').strip().lower()
+        if not mode:
+            return
+        self.control_mode = mode
+        if self.lenient_in_manual:
+            self._set_lenient_mode(mode == 'manual', reason=f'control_mode={mode}')
     
     def pose_callback(self, msg):
         """Monitor localization confidence from AMCL"""
@@ -275,6 +333,8 @@ class SafetyController(Node):
             f"  Low Confidence Stop: {'ACTIVE' if self.low_confidence_stop else 'inactive'}",
             f"  Obstacle Stop: {'ACTIVE' if self.obstacle_stop else 'inactive'}",
             f"  Manual Override: {'ENABLED' if self.manual_override else 'disabled'}",
+            f"  Control Mode: {self.control_mode}",
+            f"  Lenient Mode: {'ENABLED' if self.lenient_mode else 'disabled'} (scale: {self.lenient_scale:.2f})",
             f"",
             f"Sensors:",
             f"  Localization: {self.localization_confidence:.1f}% (threshold: {self.confidence_threshold}%)",

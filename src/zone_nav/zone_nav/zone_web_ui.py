@@ -106,6 +106,7 @@ class ZoneWebServer(Node):
         # Use ReentrantCallbackGroup to avoid deadlock when called from _process_ros_call_queue (which uses default group)
         self.safety_status_client = self.create_client(Trigger, 'safety/status', callback_group=self.cb_group)
         self.safety_override_client = self.create_client(SetBool, 'safety/override', callback_group=self.cb_group)
+        self.auto_reloc_client = self.create_client(Trigger, '/auto_relocate', callback_group=self.cb_group)
 
         # Map manager service clients
         self.upload_map_client = self.create_client(UploadMap, '/map_manager/upload_map')
@@ -3328,6 +3329,14 @@ def main(args=None):
     from .stack_manager import StackManager
     stack_manager_node = StackManager()
 
+    auto_reloc_node = None
+    try:
+        from .auto_reloc import CorrelativeRelocalizer
+        auto_reloc_node = CorrelativeRelocalizer()
+        ros_node.get_logger().info('Auto relocalizer started (/auto_relocate)')
+    except Exception as e:
+        ros_node.get_logger().warn(f'Auto relocalizer not started: {e}')
+
     # Start Flask in a separate thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
@@ -3337,6 +3346,8 @@ def main(args=None):
     # Add nodes to executor
     executor.add_node(ros_node)
     executor.add_node(stack_manager_node)
+    if auto_reloc_node is not None:
+        executor.add_node(auto_reloc_node)
 
     try:
         executor.spin()
@@ -3357,6 +3368,8 @@ def main(args=None):
         try:
             ros_node.destroy_node()
             stack_manager_node.destroy_node()
+            if auto_reloc_node is not None:
+                auto_reloc_node.destroy_node()
         except:
             pass
         try:
@@ -3512,6 +3525,33 @@ def stack_health():
 
     try:
         return jsonify(ros_node.call_ros_from_flask(check, timeout=2.0))
+    except Exception as e:
+        return jsonify({'ok': False, 'message': str(e)}), 500
+
+
+@app.route('/api/auto_relocate', methods=['POST'])
+def auto_relocate():
+    """Trigger auto relocalization via /auto_relocate (std_srvs/Trigger)."""
+    if ros_node is None:
+        return jsonify({'error': 'ROS node not initialized'}), 500
+
+    def call_auto_reloc():
+        if not ros_node.auto_reloc_client.wait_for_service(timeout_sec=0.5):
+            return {'ok': False, 'message': 'Auto relocalize service not available'}
+
+        req = Trigger.Request()
+        future = ros_node.auto_reloc_client.call_async(req)
+        end_time = time.time() + 10.0
+        while time.time() < end_time:
+            if future.done():
+                res = future.result()
+                return {'ok': bool(res.success), 'message': str(res.message)}
+            time.sleep(0.05)
+        return {'ok': False, 'message': 'Auto relocalize timed out'}
+
+    try:
+        result = ros_node.call_ros_from_flask(call_auto_reloc, timeout=12.0)
+        return jsonify(result), 200 if result.get('ok') else 500
     except Exception as e:
         return jsonify({'ok': False, 'message': str(e)}), 500
 

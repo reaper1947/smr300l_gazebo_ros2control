@@ -29,6 +29,7 @@
             --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
             --shadow-md: 0 3px 8px rgba(0, 0, 0, 0.6);
             --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.7);
+            --sidebar-width: 340px;
         }
 
         * {
@@ -97,12 +98,25 @@
         }
 
         #sidebar {
-            width: 340px;
+            width: var(--sidebar-width);
+            min-width: 240px;
+            max-width: 520px;
             background: var(--bg-secondary);
             overflow-y: auto;
             border-right: 1px solid var(--border-primary);
             display: flex;
             flex-direction: column;
+        }
+
+        #sidebar-resizer {
+            flex: 0 0 6px;
+            cursor: col-resize;
+            background: transparent;
+            border-right: 1px solid var(--border-primary);
+        }
+
+        #sidebar-resizer:hover {
+            background: rgba(46, 160, 67, 0.12);
         }
 
         .sidebar-header {
@@ -1143,7 +1157,8 @@
         .joystick-container {
             display: flex;
             flex-direction: column;
-            align-items: normal;
+            align-items: center;
+            gap: 12px;
             padding: 16px;
             background: var(--bg-elevated);
             border-radius: 6px;
@@ -1158,7 +1173,7 @@
             background: radial-gradient(circle, var(--bg-tertiary), var(--bg-primary));
             border: 2px solid var(--border-secondary);
             border-radius: 50%;
-            margin: 16px 0;
+            margin: 6px 0 0;
             box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
         }
 
@@ -1220,16 +1235,23 @@
             transform: translateY(-50%);
         }
 
+        .joystick-controls {
+            width: 100%;
+            display: grid;
+            gap: 8px;
+            align-self: stretch;
+        }
+
         .joystick-info {
             text-align: center;
             color: var(--text-secondary);
             font-size: 11px;
-            margin-top: 8px;
+            margin-top: 4px;
         }
 
         .speed-slider {
             width: 100%;
-            margin-top: 12px;
+            margin-top: 0;
         }
 
         .speed-label {
@@ -1239,6 +1261,7 @@
             color: var(--text-secondary);
             font-size: 11px;
             margin-bottom: 4px;
+            width: 100%;
         }
     </style>
 </head>
@@ -1328,7 +1351,7 @@
                         </div>
                     </div>
 
-                    <div class="card tool-panel" id="filters-card">
+                    <div class="card">
                         <h2>Configuration Layouts</h2>
                         <div style="display: flex; gap: 8px; margin-bottom: 10px;">
                             <button class="btn-save" style="flex: 1; padding: 8px; background: #4CAF50;"
@@ -1352,7 +1375,7 @@
                         </div>
                     </div>
 
-                    <div class="card tool-panel" id="zone-add-card">
+                    <div class="card tool-panel" id="filters-card">
                         <div class="card-header">
                             <h3 class="card-title">Filters</h3>
                         </div>
@@ -1413,7 +1436,7 @@
                         </div>
                     </div>
 
-                    <div class="card tool-panel" id="manual-control-card">
+                    <div class="card tool-panel" id="zone-add-card">
                         <div class="card-header">
                             <h3 class="card-title">Add New Zone</h3>
                         </div>
@@ -1465,7 +1488,7 @@
                         </div>
                     </div>
 
-                    <div class="card tool-panel" id="path-drawing-card">
+                    <div class="card">
                         <div class="collapsible-header" onclick="toggleZonesCollapse()" style="margin: 0; padding: 0;">
                             <h3 class="card-title">Saved Zones</h3>
                             <span class="collapse-icon" id="zones-collapse-icon">v</span>
@@ -1477,7 +1500,7 @@
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card tool-panel" id="manual-control-card">
                         <div class="collapsible-header" onclick="toggleManualCollapse()" style="margin: 0; padding: 0;">
                             <h3 class="card-title">Manual Control</h3>
                             <span class="collapse-icon collapsed" id="manual-collapse-icon">v</span>
@@ -1498,6 +1521,8 @@
                                     <div class="joystick-btn right" onmousedown="startMoving('rotate_right')"
                                         onmouseup="stopMoving()" ontouchstart="startMoving('rotate_right')"
                                         ontouchend="stopMoving()">&gt;</div>
+                                </div>
+                                <div class="joystick-controls">
                                     <div class="speed-label">
                                         <span>Speed:</span>
                                         <span id="speed-value">0.3 m/s</span>
@@ -1511,7 +1536,7 @@
                             </div>
                         </div>
 
-                        <div class="card">
+                        <div class="card tool-panel" id="path-drawing-card">
                             <button class="btn-save" style="background: #9C27B0; width: 100%;"
                                 onclick="toggleSequence()" id="sequence-btn">
                                 Start Sequence
@@ -1580,6 +1605,7 @@
                 </div>
             </div>
 
+            <div id="sidebar-resizer"></div>
             <div id="map-container">
                 <div class="map-toolbar">
                     <div class="toolbar-group">
@@ -1615,6 +1641,9 @@
                     <div class="toolbar-group">
                         <button class="tool-btn pose-tool" id="btnPoseEstimate" onclick="togglePoseEstimateMode()" title="Manual Relocate">
                             📍
+                        </button>
+                        <button class="tool-btn pose-tool" id="btnAutoRelocate" onclick="requestAutoRelocate()" title="Auto Relocate">
+                            🧭
                         </button>
                     </div>
                 </div>
@@ -1743,6 +1772,40 @@
                     canvas.height = Math.max(1, Math.floor(r.height * dpr));
                     // Draw in CSS pixels
                     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                }
+
+                function initSidebarResizer() {
+                    const resizer = document.getElementById('sidebar-resizer');
+                    const sidebar = document.getElementById('sidebar');
+                    if (!resizer || !sidebar) return;
+
+                    let isResizing = false;
+
+                    resizer.addEventListener('mousedown', (e) => {
+                        isResizing = true;
+                        document.body.style.cursor = 'col-resize';
+                        document.body.style.userSelect = 'none';
+                        e.preventDefault();
+                    });
+
+                    window.addEventListener('mousemove', (e) => {
+                        if (!isResizing) return;
+                        const minWidth = 240;
+                        const maxWidth = 520;
+                        const newWidth = Math.min(maxWidth, Math.max(minWidth, e.clientX));
+                        document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+                        resizeCanvasToContainer();
+                        if (mapData && mapData.image) {
+                            drawMap();
+                        }
+                    });
+
+                    window.addEventListener('mouseup', () => {
+                        if (!isResizing) return;
+                        isResizing = false;
+                        document.body.style.cursor = '';
+                        document.body.style.userSelect = '';
+                    });
                 }
 
                 let scale = 1;
@@ -2024,6 +2087,29 @@
                     }
                     updateCursor();
                     drawMap();
+                }
+
+                async function requestAutoRelocate() {
+                    if (isDrawingPath || filterDrawMode || settingOrientation || poseEstimateMode) {
+                        showStatus('Finish drawing or pose estimate first', 'error');
+                        return;
+                    }
+                    const btn = document.getElementById('btnAutoRelocate');
+                    if (btn) btn.disabled = true;
+                    showStatus('Running auto relocalization...', 'info');
+                    try {
+                        const resp = await fetch('/api/auto_relocate', { method: 'POST' });
+                        const data = await resp.json();
+                        if (data.ok) {
+                            showStatus(data.message || 'Auto relocalization complete', 'success');
+                        } else {
+                            showStatus(data.message || 'Auto relocalization failed', 'error');
+                        }
+                    } catch (err) {
+                        showStatus('Auto relocalization error', 'error');
+                    } finally {
+                        if (btn) btn.disabled = false;
+                    }
                 }
 
                 function publishInitialPose(x, y, yaw) {
@@ -2411,6 +2497,7 @@
 
                     // Size canvas to its container (CSS pixels)
                     resizeCanvasToContainer();
+                    initSidebarResizer();
                     window.addEventListener('resize', () => {
                         resizeCanvasToContainer();
                         if (mapData && mapData.image) {
