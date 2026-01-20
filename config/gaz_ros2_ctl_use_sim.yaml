@@ -1,8 +1,5 @@
 controller_manager:
   ros__parameters:
-<<<<<<< HEAD
-    use_sim_time: true
-=======
     update_rate: 30
     use_sim_time: true
 
@@ -18,6 +15,8 @@ diff_cont:
     publish_rate: 50.0
 
     base_frame_id: base_link
+    odom_frame_id: odom
+    enable_odom_tf: true
 
     left_wheel_names: ['left_wheel_joint']
     right_wheel_names: ['right_wheel_joint']
@@ -25,4 +24,3 @@ diff_cont:
     wheel_radius: 0.053
 
     use_stamped_vel: false
->>>>>>> 51bf80f (web ui nav update)

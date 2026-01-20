@@ -78,4 +78,14 @@ def generate_launch_description():
                 'use_sim_time': True
             }]
         ),
+
+        Node(
+            package='next_ros2ws_tools',
+            executable='auto_reloc',
+            name='auto_reloc',
+            output='screen',
+            parameters=[{
+                'use_sim_time': True
+            }]
+        ),
     ])

@@ -1,12 +1,4 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
 slam_toolbox:
-=======
-x`slam_toolbox:
->>>>>>> 51bf80f (web ui nav update)
-=======
-slam_toolbox:
->>>>>>> a0062e6 (Add live map support, stack management, and UI improvements)
   ros__parameters:
 
     # Plugin params
@@ -23,23 +15,7 @@ slam_toolbox:
     base_frame: base_link
     scan_topic: /scan
     use_map_saver: true
-<<<<<<< HEAD
-<<<<<<< HEAD
-    #mode: mapping
-    mode:  localization
-
-    # if you'd like to immediately start continuing a map at a given pose
-    # or at the dock, but they are mutually exclusive, if pose is given
-    # will use pose
-    map_file_name: /home/ter/dev_ws/my_map_serial
-    # map_start_pose: [0.0, 0.0, 0.0]
-    map_start_at_dock: true
-
-=======
-    mode: localization
-=======
     mode: mapping
->>>>>>> 09e677c (Proper Commit From Right Account :))
     map_start_at_dock: false
     map_file_name: ""
     initial_pose_x: 0.0
@@ -50,18 +26,11 @@ slam_toolbox:
     minimum_travel_distance: 0.05
     minimum_travel_heading: 0.05
     do_loop_closing: false
->>>>>>> 51bf80f (web ui nav update)
     debug_logging: false
     throttle_scans: 1
     transform_publish_period: 0.02 #if 0 never publishes odometry
     map_update_interval: 5.0
     resolution: 0.05
-<<<<<<< HEAD
-    max_laser_range: 20.0 #for rastering images
-    minimum_time_interval: 0.5
-    transform_timeout: 0.2
-=======
->>>>>>> 51bf80f (web ui nav update)
     tf_buffer_duration: 30.
     stack_size_to_use: 40000000 #// program needs a larger stack size to serialize large maps
     enable_interactive_mode: true
@@ -69,20 +38,11 @@ slam_toolbox:
     # General Parameters
     use_scan_matching: true
     use_scan_barycenter: true
-<<<<<<< HEAD
-    minimum_travel_distance: 0.5
-    minimum_travel_heading: 0.5
-=======
->>>>>>> 51bf80f (web ui nav update)
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
     link_match_minimum_response_fine: 0.1  
     link_scan_maximum_distance: 1.5
     loop_search_maximum_distance: 3.0
-<<<<<<< HEAD
-    do_loop_closing: true 
-=======
->>>>>>> 51bf80f (web ui nav update)
     loop_match_minimum_chain_size: 10           
     loop_match_maximum_variance_coarse: 3.0  
     loop_match_minimum_response_coarse: 0.35    
